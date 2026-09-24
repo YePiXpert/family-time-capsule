@@ -14,6 +14,12 @@ def shot(name,fresh=False):
     (args.output/f'{name}.xml').write_text(ET.tostring(hierarchy(fresh),encoding='unicode'))
 def launch(): adb('shell','am','start','-W','-n',package+'/.MainActivity');wait_until_drawn()
 def restart(): adb('shell','am','force-stop',package);launch()
+def assert_fits(sheet):
+    # 一屏一张纸的页面（编辑、写信）键盘收着时不能上下滑；键盘收起有动画，多看几次。
+    for attempt in range(5):
+        if not scrolls_around(hierarchy(fresh=attempt>0),sheet): return
+        time.sleep(1)
+    shot(f'{sheet}-scrolls',fresh=True);raise AssertionError(f'{sheet} is taller than its scroll area with the keyboard down')
 def write(text): adb('shell','input','text',text.replace(' ','%s'));time.sleep(1)
 started=time.monotonic()
 def phase(name):
@@ -27,12 +33,8 @@ try:
     adb('shell','wm','size','390x844');adb('shell','wm','density','160')
     launch();tap('welcome-start');shot('home-390');phase('Welcome')
     tap('capture-new');find('说一段');tap('capture-text');write('Offline little story.');find('AI 助手');adb('shell','input','keyevent','4');shot('editor')
-    # 键盘收起后编辑页一屏放下、不能上下滑（1.0.5 出包：纸比滚动区高出一截，整页还能滑）。键盘收起有动画，多看几次。
-    for attempt in range(5):
-        if not scrolls_around(hierarchy(fresh=attempt>0),'editor-sheet'): break
-        time.sleep(1)
-    else: shot('editor-scrolls',fresh=True);raise AssertionError('Editor sheet is taller than its scroll area with the keyboard down')
-    report['editorFits']=True
+    # 键盘收起后编辑页一屏放下、不能上下滑（1.0.5 出包：纸比滚动区高出一截，整页还能滑）。
+    assert_fits('editor-sheet');report['editorFits']=True
     restart();tap('继续编辑');assert find('capture-text').get('text')=='Offline little story.'
     tap('editor-by');tap('editor-by-爸爸');tap('capture-save');find('record-edit');assert find('record-by').get('text')=='—— 爸爸';shot('record-reading')
     tap('record-edit');tap('capture-text');adb('shell','input','keyevent','KEYCODE_MOVE_END');write(' More.');adb('shell','input','keyevent','4');tap('capture-save');find('record-edit');assert find('record-by').get('text')=='—— 爸爸';phase('Record and draft')
@@ -43,7 +45,8 @@ try:
     # 时间胶囊：写一封信 → 封存 → 重启后书架仍在 → 打开是「还没到日子」的信封 → 提前拆封能读到正文。
     # 首页一屏放下、不能上下滑：相册与信在书架横条上，找不到就横着拖（tap_shelf）。
     restart();tap_seek('letter-new');tap('letter-title');write('Letter for later');adb('shell','input','keyevent','4')
-    tap('letter-text');write('Words kept for the future.');adb('shell','input','keyevent','4')
+    tap('letter-text');write('Words kept for the future.');adb('shell','input','keyevent','4');shot('letter-editor')
+    assert_fits('letter-sheet');report['letterFits']=True
     tap_seek('letter-seal');tap_last('封存');find('还没到日子');find('letter-open-early');shot('letter-sealed')
     restart();tap_shelf('Letter for later');find('还没到日子')
     tap('letter-open-early');tap_last('拆开');find('Words kept for the future.');shot('letter-opened');letterSealed=True;phase('Letter')

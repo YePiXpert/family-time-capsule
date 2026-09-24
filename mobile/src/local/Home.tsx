@@ -216,6 +216,7 @@ export function Month({ route }: Props<"Month">) {
   return (
     <Page scroll={false}>
       <SectionList
+        alwaysBounceVertical={false}
         sections={sections}
         keyExtractor={(row) => row.map((r) => r.id).join("/")}
         contentContainerStyle={{

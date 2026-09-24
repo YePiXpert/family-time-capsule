@@ -66,6 +66,7 @@ export function PhotoPicker<T extends PhotoChoice>({
       >
         <Page top={false} back={false} scroll={false}>
           <FlatList
+            alwaysBounceVertical={false}
             data={choices}
             keyExtractor={(choice) => choice.mediaId}
             numColumns={2}

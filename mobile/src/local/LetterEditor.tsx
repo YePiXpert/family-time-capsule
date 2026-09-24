@@ -4,11 +4,15 @@ import {
   AppState,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
+  StyleSheet,
+  TextInput,
   View,
 } from "react-native";
 import { usePreventRemove } from "@react-navigation/native";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import { JournalIcon } from "../components/JournalIcon";
 import { useLibrary, useStore } from "./context";
 import { useRecorder } from "./editorHooks";
 import { isEmptyLetter } from "./empties";
@@ -28,14 +32,15 @@ import {
   BottomBar,
   Button,
   Card,
-  DangerCard,
+  DateStrip,
   ErrorText,
-  Field,
+  IconButton,
   Page,
   Text,
   messageOf,
   serif,
   useKeyboardBarOffset,
+  useSheetViewport,
   useStyles,
   useTheme,
 } from "./ui";
@@ -47,8 +52,9 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
   const state = useLibrary(),
     store = useStore(),
     s = useStyles(),
-    { large } = useTheme(),
-    keyboardOffset = useKeyboardBarOffset();
+    { colors, large } = useTheme(),
+    keyboardOffset = useKeyboardBarOffset(),
+    { viewport, height, measure } = useSheetViewport();
   const stored = state.letters[route.params.id];
   const initial: LetterDraft | undefined = stored
     ? { letter: stored }
@@ -58,6 +64,7 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
     [busy, setBusy] = useState(false),
     [dateOpen, setDateOpen] = useState(false),
     [allowExit, setAllowExit] = useState(false),
+    [contentHeight, setContentHeight] = useState(0),
     [importedMedia, setImportedMedia] = useState<Record<string, LocalMedia>>(
       {},
     );
@@ -271,8 +278,59 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
       ],
     );
   };
+  const deleteDraft = () =>
+    Alert.alert("删除这封信？", "这封信还没封存，删除后无法找回。", [
+      { text: "取消", style: "cancel" },
+      {
+        text: "删除",
+        style: "destructive",
+        onPress: () => {
+          void run(async () => {
+            if (current.current?.recordingFile) await discardAudio();
+            current.current = undefined;
+            await deleteLetter(store, letter.id);
+            await leave(() => navigation.goBack());
+          });
+        },
+      },
+    ]);
+  const discardRecording = () =>
+    Alert.alert("放弃录音？", "这段录音不会放进信里。", [
+      { text: "取消", style: "cancel" },
+      {
+        text: "放弃",
+        style: "destructive",
+        onPress: () => {
+          void run(discardAudio);
+        },
+      },
+    ]);
+  const input = {
+    color: colors.ink,
+    fontFamily: serif,
+    paddingHorizontal: 0,
+  } as const;
+  const fromFont = {
+    fontFamily: serif,
+    fontSize: large ? 19 : 16,
+    lineHeight: large ? 26 : 22,
+    paddingVertical: 12,
+  } as const;
   return (
-    <Page scroll={false} title="写一封信">
+    <Page
+      scroll={false}
+      title="写一封信"
+      // 与编辑页一样：删除收进顶栏右侧一枚垃圾桶，页尾不再多一张卡，整页一屏放下、不上下滑。
+      right={
+        <IconButton
+          label="删除这封信"
+          icon="trash"
+          testID="letter-delete"
+          disabled={busy}
+          onPress={deleteDraft}
+        />
+      }
+    >
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         // 布局帧相对整屏 SafeAreaView、已含页内顶栏，不能再加顶栏的偏移（1.0.0／1.0.1 键盘上方
@@ -282,136 +340,198 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
       >
         <ScrollView
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={s.content}
+          contentContainerStyle={[s.content, { paddingBottom: 20 }]}
+          // 纸铺满键盘收着时的可见高度，键盘弹起时不缩；放得下就不能滑、不回弹，见 useSheetViewport。
+          onLayout={(e) => measure(e.nativeEvent.layout.height)}
+          onContentSizeChange={(_, h) => setContentHeight(h)}
+          scrollEnabled={contentHeight > height + 1}
+          alwaysBounceVertical={false}
+          overScrollMode="never"
         >
-          <Text style={s.muted}>
-            写给多年后的她。封存以后，要到拆封那天才能打开。
-          </Text>
-          <Field
-            label="标题"
-            testID="letter-title"
-            placeholder="给十八岁的你"
-            value={letter.title}
-            maxLength={LETTER_TITLE_LIMIT}
-            editable={!busy}
-            onChangeText={(title) => change({ title }, true)}
-            style={{ fontFamily: serif, fontSize: large ? 21 : 18 }}
-          />
-          <Field
-            label="正文"
-            hideLabel
-            testID="letter-text"
-            placeholder="此刻想对你说的话…"
-            value={letter.text}
-            maxLength={LETTER_TEXT_LIMIT}
-            editable={!busy}
-            multiline
-            textAlignVertical="top"
-            onChangeText={(text) => change({ text }, true)}
+          {/* 一张信纸：拆封日期、标题、正文、录音与落款都写在这张纸上（DESIGN.md「写信」）。 */}
+          <Card
+            testID="letter-sheet"
             style={{
-              minHeight: 220,
-              fontFamily: serif,
-              lineHeight: large ? 30 : 27,
+              minHeight: viewport > 0 ? viewport - 40 : undefined,
+              paddingHorizontal: 20,
+              paddingTop: 8,
+              paddingBottom: 8,
+              gap: 0,
             }}
-          />
-          <Field
-            label="落款"
-            testID="letter-from"
-            placeholder="妈妈 / 爸爸"
-            value={letter.from}
-            maxLength={LETTER_FROM_LIMIT}
-            editable={!busy}
-            onChangeText={(from) => change({ from }, true)}
-          />
-          <View style={s.between}>
-            <Text style={s.muted}>拆封日期</Text>
-            <Button
-              title={openAtLabel(letter.openAt)}
-              icon="calendar"
+          >
+            {/* 页眉：拆封那天，与编辑页的日期同一条强调色小竖条，点开就地改。 */}
+            <Pressable
               testID="letter-open-at"
+              accessibilityRole="button"
+              accessibilityLabel={`拆封日期：${openAtLabel(letter.openAt)}`}
+              accessibilityHint="点按修改拆封日期"
+              accessibilityState={{ expanded: dateOpen, disabled: busy }}
               disabled={busy}
+              hitSlop={6}
               onPress={() => setDateOpen(!dateOpen)}
-            />
-          </View>
-          {dateOpen && (
-            <>
-              <DateTimePicker
-                value={new Date(`${letter.openAt}T00:00:00`)}
-                mode="date"
-                minimumDate={tomorrow}
-                display={Platform.OS === "ios" ? "spinner" : "default"}
-                onChange={(_, date) => {
-                  if (Platform.OS !== "ios") setDateOpen(false);
-                  if (date) change({ openAt: toDayKey(date) });
-                }}
-              />
-              {Platform.OS === "ios" && (
-                <Button title="日期选好了" onPress={() => setDateOpen(false)} />
-              )}
-            </>
-          )}
-          <View style={s.row}>
-            <Button
-              title={recording ? "完成录音" : "录一段话"}
-              icon="microphone"
-              testID="letter-record"
-              disabled={busy}
-              onPress={() => {
-                void run(async () => {
-                  if (current.current?.recordingFile) {
-                    await finishAudio();
-                    return;
-                  }
-                  await startRecording();
-                });
+              style={{
+                minHeight: 44,
+                justifyContent: "center",
+                alignSelf: "flex-start",
               }}
+            >
+              {/* 卡在 iOS 是液态玻璃：按压透明度落在里面的字上。 */}
+              {({ pressed }) => (
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 6,
+                    opacity: pressed ? 0.6 : 1,
+                  }}
+                >
+                  <DateStrip>
+                    <Text
+                      style={[
+                        s.muted,
+                        { color: colors.accent, fontWeight: "600" },
+                      ]}
+                    >
+                      {openAtLabel(letter.openAt)} 拆封
+                    </Text>
+                  </DateStrip>
+                  <JournalIcon
+                    name="chevron-down"
+                    color={colors.accent}
+                    size={14}
+                  />
+                </View>
+              )}
+            </Pressable>
+            {dateOpen && (
+              <View style={{ gap: 8, paddingBottom: 8 }}>
+                <DateTimePicker
+                  value={new Date(`${letter.openAt}T00:00:00`)}
+                  mode="date"
+                  minimumDate={tomorrow}
+                  display={Platform.OS === "ios" ? "spinner" : "default"}
+                  onChange={(_, date) => {
+                    if (Platform.OS !== "ios") setDateOpen(false);
+                    if (date) change({ openAt: toDayKey(date) });
+                  }}
+                />
+                {Platform.OS === "ios" && (
+                  <Button
+                    title="日期选好了"
+                    onPress={() => setDateOpen(false)}
+                  />
+                )}
+              </View>
+            )}
+            {/* 标题与正文直接写在纸上：无框、衬线；说明留给占位句与封存前的确认。 */}
+            <TextInput
+              testID="letter-title"
+              accessibilityLabel="标题"
+              placeholder="给十八岁的你"
+              placeholderTextColor={colors.muted}
+              value={letter.title}
+              maxLength={LETTER_TITLE_LIMIT}
+              editable={!busy}
+              onChangeText={(title) => change({ title }, true)}
+              style={[
+                input,
+                {
+                  fontSize: large ? 23 : 20,
+                  fontWeight: "600",
+                  paddingTop: 4,
+                  paddingBottom: 8,
+                },
+              ]}
             />
-          </View>
-          {draft.recordingFile && (
-            <Card>
-              <Text>
-                {recording
-                  ? "正在录音，离开前请结束并保存。"
-                  : "有一段未完成的录音"}
-              </Text>
-              <Button
-                title="恢复并保存录音"
-                disabled={busy}
-                onPress={() => {
-                  void run(finishAudio);
-                }}
-              />
-              <Button
-                title="放弃这段录音"
-                disabled={busy}
-                onPress={() =>
-                  Alert.alert("放弃录音？", "这段录音不会放进信里。", [
-                    { text: "取消", style: "cancel" },
-                    {
-                      text: "放弃",
-                      style: "destructive",
-                      onPress: () => {
-                        void run(discardAudio);
-                      },
-                    },
-                  ])
-                }
-              />
-            </Card>
-          )}
-          {recordings.map((media, i) => (
-            <View key={media.id} style={s.between}>
-              <Text>录音 {i + 1}</Text>
-              <View style={s.row}>
+            <TextInput
+              testID="letter-text"
+              accessibilityLabel="正文"
+              placeholder="写给多年后的她。此刻想对她说的话…"
+              placeholderTextColor={colors.muted}
+              value={letter.text}
+              maxLength={LETTER_TEXT_LIMIT}
+              editable={!busy}
+              multiline
+              textAlignVertical="top"
+              onChangeText={(text) => change({ text }, true)}
+              style={[
+                input,
+                {
+                  flexGrow: 1,
+                  minHeight: 132,
+                  paddingTop: 4,
+                  paddingBottom: 12,
+                  fontSize: large ? 20 : 17,
+                  lineHeight: large ? 32 : 28,
+                },
+              ]}
+            />
+            {recording && (
+              <View style={[s.row, { flexWrap: "nowrap" }]}>
+                <View
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: 4,
+                    backgroundColor: colors.error,
+                  }}
+                />
+                <Text style={[s.muted, { flex: 1, minWidth: 0 }]}>
+                  正在录音…
+                </Text>
+                <Button
+                  title="放弃"
+                  kind="text"
+                  danger
+                  compact
+                  disabled={busy}
+                  onPress={discardRecording}
+                />
+              </View>
+            )}
+            {!recording && !!draft.recordingFile && (
+              <View style={[s.row, { flexWrap: "nowrap" }]}>
+                <Text style={[s.muted, { flex: 1, minWidth: 0 }]}>
+                  有一段录音还没保存
+                </Text>
+                <Button
+                  title="保存录音"
+                  kind="text"
+                  compact
+                  disabled={busy}
+                  onPress={() => {
+                    void run(finishAudio);
+                  }}
+                />
+                <Button
+                  title="放弃"
+                  kind="text"
+                  danger
+                  compact
+                  disabled={busy}
+                  onPress={discardRecording}
+                />
+              </View>
+            )}
+            {recordings.map((media, i) => (
+              <View
+                key={media.id}
+                style={[s.row, { flexWrap: "nowrap", gap: 0 }]}
+              >
+                <Text style={[s.muted, { flex: 1, minWidth: 0 }]}>
+                  录音 {i + 1}
+                </Text>
                 <Button
                   title="听一下"
-                  icon="audio"
+                  kind="text"
                   compact
                   disabled={busy || recording}
                   onPress={() => navigation.navigate("Media", { id: media.id })}
                 />
                 <Button
                   title="去掉"
+                  kind="text"
+                  danger
                   compact
                   disabled={busy || recording}
                   onPress={() =>
@@ -421,31 +541,81 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
                   }
                 />
               </View>
-            </View>
-          ))}
-          <ErrorText message={error} />
-          <DangerCard
-            title="删除这封信"
-            testID="letter-delete"
-            disabled={busy}
-            onPress={() =>
-              Alert.alert("删除这封信？", "这封信还没封存，删除后无法找回。", [
-                { text: "取消", style: "cancel" },
-                {
-                  text: "删除",
-                  style: "destructive",
-                  onPress: () => {
+            ))}
+            {!!error && (
+              <View style={{ paddingBottom: 4 }}>
+                <ErrorText message={error} />
+              </View>
+            )}
+            {/* 页脚一行：左边「录一段话」，右边落款「—— 妈妈」，落款直接写在纸上。 */}
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 8,
+                minHeight: 52,
+              }}
+            >
+              <View style={{ marginLeft: -8 }}>
+                <Button
+                  title={recording ? "录完了" : "录一段话"}
+                  icon="microphone"
+                  kind="text"
+                  compact
+                  testID="letter-record"
+                  disabled={busy}
+                  onPress={() => {
                     void run(async () => {
-                      if (current.current?.recordingFile) await discardAudio();
-                      current.current = undefined;
-                      await deleteLetter(store, letter.id);
-                      await leave(() => navigation.goBack());
+                      if (current.current?.recordingFile) {
+                        await finishAudio();
+                        return;
+                      }
+                      await startRecording();
                     });
-                  },
-                },
-              ])
-            }
-          />
+                  }}
+                />
+              </View>
+              <View
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "flex-end",
+                  gap: 6,
+                }}
+              >
+                <Text style={[fromFont, { color: colors.ink }]}>——</Text>
+                {/* 落款框随字宽：底下一行看不见的同款字撑出宽度，输入框盖在上面，「—— 妈妈」贴着右边。 */}
+                <View style={{ flexShrink: 1, minWidth: 48 }}>
+                  <Text
+                    numberOfLines={1}
+                    accessibilityElementsHidden
+                    importantForAccessibility="no-hide-descendants"
+                    style={[fromFont, { opacity: 0, paddingRight: 4 }]}
+                  >
+                    {letter.from || "落款"}
+                  </Text>
+                  <TextInput
+                    testID="letter-from"
+                    accessibilityLabel="落款"
+                    placeholder="落款"
+                    placeholderTextColor={colors.muted}
+                    value={letter.from}
+                    maxLength={LETTER_FROM_LIMIT}
+                    editable={!busy}
+                    onChangeText={(from) => change({ from }, true)}
+                    style={[
+                      input,
+                      fromFont,
+                      StyleSheet.absoluteFill,
+                      { paddingVertical: 0 },
+                    ]}
+                  />
+                </View>
+              </View>
+            </View>
+          </Card>
         </ScrollView>
         <BottomBar>
           <View style={s.row}>
