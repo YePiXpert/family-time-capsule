@@ -103,7 +103,7 @@ try:
     broken=[n.get('text') for n in hierarchy().iter('node') if any(w in (n.get('text') or '') for w in ('失败','超时','尚未就绪'))]
     assert not broken,f'Book export reported {broken}'
     find('year-yearbook');bookExport=True;phase('Yearbook')
-    report.update(success=True,offlineStartup=True,draftRecovered=True,albumSurvivedRelaunch=True,aiSettingsOffline=True,backupRoundtrip=True,remoteCardOffline=remoteCardOffline,familyOffline=familyOffline,keepsakeCard=True,yearbookBook=bookExport,letterSealed=letterSealed,archiveSheet=archiveSheet,widths=[320,390])
+    report.update(success=True,offlineStartup=True,draftRecovered=True,albumSurvivedRelaunch=True,backupRoundtrip=True,remoteCardOffline=remoteCardOffline,familyOffline=familyOffline,keepsakeCard=True,yearbookBook=bookExport,letterSealed=letterSealed,archiveSheet=archiveSheet,widths=[320,390])
 finally:
     report['timing']=dict(seconds=round(time.monotonic()-started),dumps=stats['dumps'],dumpSeconds=round(stats['dumpSeconds']))
     shot('final',fresh=True)
