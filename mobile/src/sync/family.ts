@@ -2,6 +2,7 @@ import { File, FileMode } from "expo-file-system";
 import { randomUUID } from "expo-crypto";
 import {
   BackupStopped,
+  createBackup,
   restorePinName,
   restorePins,
   withoutPendingRecordings,
@@ -380,6 +381,45 @@ export async function joinFamily(
   if (previous?.keyId !== keyId) clearSyncFiles();
   writeRemoteState(freshRemoteState(keyId));
   return runFamilySync(store, { ...deps, key });
+}
+
+/**
+ * 刚获准（或找回）的手机第一次并入家人的时光：先在本机留一份保留备份，再按三方合并并入，不整库替换。
+ * 备份失败就不并；已有记录的手机在界面上先确认过「会和家人共享」。
+ */
+export async function startSharing(
+  store: LocalStore,
+  key: Uint8Array,
+  deps: Omit<EngineDeps, "key">,
+): Promise<RemoteState> {
+  throwIfAborted(deps.signal);
+  deps.onProgress?.("正在给这台手机留一份本机备份…");
+  try {
+    await createBackup(store.get(), deps.onProgress, deps.signal);
+  } catch (e) {
+    if (e instanceof BackupStopped) throw new SyncError("CANCELED", "已停止。");
+    throw e;
+  }
+  return joinFamily(store, key, deps);
+}
+/**
+ * 凭恢复码找回后先真读一份：解开最新一份清单（索引与清单都要解得开、读得出库）才算找回。
+ * 服务上还没有任何清单时没什么可读，返回 null；有清单却没有一份是这把钥匙的，说明钥匙不对。
+ */
+export async function readNewestManifest(
+  deps: EngineDeps,
+): Promise<{ deviceName: string | null; createdAt: string } | null> {
+  const entries = await deps.transport.manifests(deps.signal);
+  if (!entries.length) return null;
+  const keyId = keyIdOf(deps.key);
+  const newest = entries
+    .filter((entry) => entry.keyId === keyId)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+  if (!newest)
+    throw new SyncError("WRONG_CODE", "找回的钥匙打不开远端的内容。");
+  const manifest = await fetchManifestOf(newest, deps);
+  decodeLibraryV2(manifest.meta, manifest.entities);
+  return { deviceName: newest.deviceName, createdAt: manifest.meta.createdAt };
 }
 
 /** 退出不需要打开本机库；可离线退出，但服务拒绝删除时先保留本机钥匙。 */

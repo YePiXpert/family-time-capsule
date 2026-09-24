@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Alert } from "react-native";
 import {
   Button,
   Card,
@@ -10,6 +9,7 @@ import {
   messageOf,
   useStyles,
 } from "../local/ui";
+import { useNav } from "../local/navigation";
 import { AIError, api, getToken } from "./client";
 import type { Member, Overview, Usage, AISettings } from "./types";
 function MemberRow({
@@ -63,30 +63,12 @@ function MemberRow({
           })
         }
       />
-      {member.role !== "admin" && (
-        <Button
-          title={member.enabled ? "停用成员" : "启用成员"}
-          onPress={() =>
-            run(async () => {
-              await api(
-                `/admin/members/${member.id}`,
-                {
-                  enabled: !member.enabled,
-                  photoLimit: member.photo_limit,
-                  writeLimit: member.write_limit,
-                },
-                "PATCH",
-              );
-              await reload();
-            })
-          }
-        />
-      )}
     </Card>
   );
 }
 export function AISettingsScreen() {
-  const s = useStyles(),
+  const nav = useNav(),
+    s = useStyles(),
     [me, setMe] = useState<{ member: Member; usage: Usage } | null>(null),
     [overview, setOverview] = useState<Overview | null>(null),
     [settings, setSettings] = useState<AISettings | null>(null),
@@ -160,9 +142,17 @@ export function AISettingsScreen() {
           </Text>
         </>
       ) : (
-        <Text style={s.muted}>
-          这台手机还没加入家庭。到「我的 → 家庭与设备」加入后，就能用 AI。
-        </Text>
+        <>
+          <Text style={s.muted}>
+            这台手机还没加入家庭。家人的手机由管理者当面扫码加进来，加入后就能用 AI。
+          </Text>
+          <Button
+            title="去加入家庭"
+            primary
+            testID="ai-join"
+            onPress={() => nav.navigate("Family")}
+          />
+        </>
       )}
       <Button
         title={busy ? "正在读取…" : "刷新状态"}
@@ -233,47 +223,9 @@ export function AISettingsScreen() {
               }}
             />
           ))}
-          <Text style={s.heading}>已加入的设备</Text>
-          {overview.devices.map((device) => (
-            <Card key={device.id}>
-              <Text>
-                {overview.members.find((m) => m.id === device.member_id)?.name}{" "}
-                · {device.name}
-              </Text>
-              <Text style={s.muted}>
-                {device.revoked ? "已撤销" : "可使用 AI"}
-              </Text>
-              {!device.revoked && device.id !== me?.member.deviceId && (
-                <Button
-                  title="撤销设备"
-                  disabled={busy}
-                  onPress={() =>
-                    Alert.alert(
-                      "撤销这台设备？",
-                      "只关闭它的 AI 访问，本机记录不受影响。",
-                      [
-                        { text: "取消", style: "cancel" },
-                        {
-                          text: "撤销",
-                          style: "destructive",
-                          onPress: () => {
-                            void run(async () => {
-                              await api(
-                                `/admin/devices/${device.id}`,
-                                undefined,
-                                "DELETE",
-                              );
-                              await refresh();
-                            });
-                          },
-                        },
-                      ],
-                    )
-                  }
-                />
-              )}
-            </Card>
-          ))}
+          <Text style={s.footnote}>
+            停用家人、停用设备在「我的 → 家庭与设备」。
+          </Text>
         </>
       )}
       <Text style={s.footnote}>由小米 MiMo 2.6 Pro 提供</Text>

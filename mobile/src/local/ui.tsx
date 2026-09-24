@@ -491,6 +491,7 @@ export function SettingsGroup({
 /**
  * 设置行：图标砖（或自定义前导）+ 标签 + 副题（读屏作为值朗读）+ 右箭头，放在 SettingsGroup 里成组。
  * 书架的书册行也用它：`leading` 换成小封面，`serifLabel` 让标签走衬线（书名）。
+ * 不给 onPress 就是只读行：不能按、没有右箭头（家人看家人名单）。
  */
 export function SettingsRow({
   icon,
@@ -512,7 +513,7 @@ export function SettingsRow({
   serifLabel?: boolean;
   label: string;
   subtitle?: string;
-  onPress: () => void;
+  onPress?: () => void;
   testID?: string;
   last?: boolean;
 }) {
@@ -521,7 +522,8 @@ export function SettingsRow({
   return (
     <Pressable
       testID={testID}
-      accessibilityRole="button"
+      disabled={!onPress}
+      accessibilityRole={onPress ? "button" : "text"}
       accessibilityLabel={label}
       accessibilityValue={subtitle ? { text: subtitle } : undefined}
       onPress={onPress}
@@ -554,7 +556,7 @@ export function SettingsRow({
           </Text>
         )}
       </View>
-      <JournalIcon name="chevron-right" color={colors.muted} size={18} />
+      {onPress && <JournalIcon name="chevron-right" color={colors.muted} size={18} />}
     </Pressable>
   );
 }

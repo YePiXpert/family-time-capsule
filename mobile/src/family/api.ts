@@ -25,6 +25,16 @@ export type DeviceRow = {
   approved_by: string | null;
   pending: number;
 };
+/** 管理者看到的家人行：启停与 AI 额度一起给（改启停时要原样带回额度）。 */
+export type OverviewMember = {
+  id: string;
+  name: string;
+  role: Role;
+  enabled: number;
+  photo_limit: number;
+  write_limit: number;
+};
+export type Overview = { members: OverviewMember[]; devices: DeviceRow[] };
 export type Joined = {
   token: string;
   member: { id: string; name: string; role: Role; deviceId: string };
@@ -177,8 +187,7 @@ export function createFamilyApi(
       value<Recovered>("POST", "/recovery/claim", input, { auth: false }),
     setRecovery: (input: { keyId: string; version: number; envelope: string; verifier: string }) =>
       value<{ ok: true }>("PUT", "/admin/recovery", input),
-    overview: () =>
-      value<{ members: (FamilyMember & { enabled: number })[]; devices: DeviceRow[] }>("GET", "/admin/overview"),
+    overview: () => value<Overview>("GET", "/admin/overview"),
     setProfile: (memberId: string, input: { name: string; role: Role }) =>
       value<{ ok: true }>("PUT", `/admin/members/${memberId}/profile`, input),
     setEnabled: (memberId: string, input: { enabled: boolean; photoLimit: number; writeLimit: number }) =>

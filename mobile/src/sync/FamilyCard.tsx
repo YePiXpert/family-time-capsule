@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
-import * as LocalAuthentication from "expo-local-authentication";
 import { getToken } from "../family/session";
 import { BackupStopped } from "../local/backup";
 import { useLibrary, useStore, useSyncStatus } from "../local/context";
@@ -15,26 +14,23 @@ import {
   messageOf,
   useStyles,
 } from "../local/ui";
-import { keyIdOf, newMasterKey } from "./crypto";
+import { keyIdOf } from "./crypto";
 import { verifyRemoteBackup } from "./engine";
-import { runFamilySync, joinFamily, leaveFamily } from "./family";
+import { runFamilySync, startSharing } from "./family";
 import { claimSync, markSyncRunning } from "./status";
 import { dateTimeLabel } from "../local/dates";
 import { bytesLabel } from "./planner";
 import {
   clearSyncFiles,
-  forgetKey,
-  freshRemoteState,
   loadKey,
   readRemoteState,
   readConflicts,
-  storeKey,
-  writeRemoteState,
   type RemoteState,
   unreadNotice,
 } from "./state";
 import { SyncError, createTransport, type RemoteStatus } from "./transport";
-/** 备份页最后一张卡：家人一起写的三态入口，进度与结果就地显示。
+/** 备份页最后一张卡：家人一起写只管同步——开始、现在同步、冲突、核对远端；
+ * 加入、退出家庭与恢复码都在「我的 → 家庭与设备」。
  * onRunningChange 与本机备份共用操作锁，避免同时读写 blob 库。
  */
 export function FamilyCard({
@@ -160,7 +156,7 @@ export function FamilyCard({
   ) => {
     const key = await loadKey();
     if (!key)
-      throw new Error("这台手机上没有一起写的钥匙，请用恢复码加入。");
+      throw new Error("这台手机还没拿到家庭的钥匙，请到「我的 → 家庭与设备」重新加入。");
     await fn(key, signal);
   };
   const syncNow = () =>
@@ -189,17 +185,30 @@ export function FamilyCard({
         );
       }),
     );
-  const resume = () =>
+  const records = Object.keys(library.records).length;
+  const shareNow = () =>
     perform((signal) =>
       withKey(signal, async (key) => {
-        const result = await joinFamily(store, key, {
+        const result = await startSharing(store, key, {
           transport: createTransport(),
           onProgress: setProgress,
           signal,
         });
-        setMessage(`已加入，同步完成。${unreadNotice(result.lastSyncSummary)}`);
+        setMessage(`已开始一起写，同步完成。${unreadNotice(result.lastSyncSummary)}`);
       }),
     );
+  /** 家里已经有人在写、这台又有自己的记录：先说清楚会共享，再开始（开始前自动留一份本机备份）。 */
+  const share = () => {
+    if (!status?.manifests || records === 0) return void shareNow();
+    Alert.alert(
+      "和家人一起写？",
+      `这台手机上已有的 ${records} 段时光会和家人共享，开始前先在本机留一份备份；草稿仍只在这台手机上。`,
+      [
+        { text: "取消", style: "cancel" },
+        { text: "开始", onPress: () => void shareNow() },
+      ],
+    );
+  };
   const verify = () =>
     perform((signal) =>
       withKey(signal, async (key) => {
@@ -214,61 +223,10 @@ export function FamilyCard({
         );
       }),
     );
-  const enable = () =>
-    perform(async () => {
-      const key = (await loadKey()) ?? newMasterKey();
-      clearSyncFiles();
-      await storeKey(key);
-      writeRemoteState(freshRemoteState(keyIdOf(key)));
-      nav.navigate("RecoveryCode", { mode: "show" });
-    });
-  const showCode = () =>
-    perform(async () => {
-      if (library.settings.lockEnabled) {
-        let unlocked = false;
-        try {
-          unlocked = (
-            await LocalAuthentication.authenticateAsync({
-              promptMessage: "查看恢复码",
-              cancelLabel: "取消",
-            })
-          ).success;
-        } catch {
-          // 设备没有可用的锁屏验证时不把主人锁在恢复码外面。
-          unlocked = true;
-        }
-        if (!unlocked) return;
-      }
-      nav.navigate("RecoveryCode", { mode: "show" });
-    });
-  const disable = () =>
-    Alert.alert(
-      "退出家人一起写？",
-      "这台手机会忘掉恢复码、不再同步；本机的时光和照片都留着。远端只撤下这台手机发布的那一份，家人的不受影响。退出前请确认恢复码已抄在纸上。",
-      [
-        { text: "取消", style: "cancel" },
-        {
-          text: "退出",
-          style: "destructive",
-          onPress: () => {
-            void perform(async (signal) => {
-              const result = await leaveFamily({
-                transport: createTransport(),
-                signal,
-              });
-              setMessage(result.removedRemote
-                ? "已退出，远端已撤下这台手机的那一份。"
-                : "已退出。这台手机之前发布到远端的那一份暂时没撤下，不影响家人。");
-              refresh();
-            });
-          },
-        },
-      ],
-    );
   const wipeFamily = () =>
     Alert.alert(
       "删掉全家的远端？",
-      "这会删除全家所有手机发布到远端的内容，这台手机也会退出、忘掉恢复码。各台手机本机的时光都还在；家人的手机再同步时会重新传上去，所以请先让家人都退出并抄好恢复码。",
+      "这会删除全家所有手机发布到远端的内容，这台手机也停止同步。各台手机本机的时光都还在；家人的手机再同步时会重新传上去。",
       [
         { text: "取消", style: "cancel" },
         {
@@ -277,9 +235,9 @@ export function FamilyCard({
           onPress: () => {
             void perform(async (signal) => {
               await createTransport().wipeFamily(signal);
-              await forgetKey();
+              // 家庭的钥匙留着：它属于家庭，不属于远端；再开始一起写还用它。
               clearSyncFiles();
-              setMessage("全家的远端已删除，这台手机已退出。");
+              setMessage("全家的远端已删除，这台手机已停止同步。");
               refresh();
             });
           },
@@ -303,23 +261,24 @@ export function FamilyCard({
       ) : signedIn === false ? (
         <>
           <Text style={s.muted}>
-            登录家人账号后，几台手机可以一起写这本册子：每段时光都有落款，照片和文字加密后经家人服务同步，服务器看不到内容。
+            加入家庭后，几台手机可以一起写这本册子：每段时光都有落款，照片和文字加密后经家人服务同步，同步存储的服务器看不到内容。
           </Text>
           <ErrorText message={error} />
           <View style={{ alignItems: "flex-start" }}>
             <Button
-              title="去登录"
+              title="去加入家庭"
               kind="text"
               compact
+              testID="remote-family"
               disabled={busy || syncing}
-              onPress={() => nav.navigate("AISettings")}
+              onPress={() => nav.navigate("Family")}
             />
           </View>
         </>
       ) : !remote?.enabled ? (
         <>
           <Text style={s.muted}>
-            一台服务就是一家人。加入后，这台手机的时光会与家人的合在一起，各自的草稿留在各自的手机上；换手机也是这样加入。
+            开始后，这台手机的时光会与家人的合在一起，各自的草稿留在各自的手机上。
           </Text>
           <ErrorText message={error} />
           {!!message && <Text accessibilityLiveRegion="polite">{message}</Text>}
@@ -337,28 +296,21 @@ export function FamilyCard({
             !error && <Text style={s.muted}>正在看看家里有没有人在写…</Text>
           ) : (
             <View style={s.row}>
-              {status.manifests > 0 ? (
-                localKeyId && localKeyId === status.keyId ? (
-                  <Button
-                    title="继续一起写"
-                    testID="remote-resume"
-                    disabled={busy || syncing}
-                    onPress={() => { void resume(); }}
-                  />
-                ) : (
-                  <Button
-                    title="加入"
-                    testID="remote-join"
-                    disabled={busy || syncing}
-                    onPress={() => nav.navigate("RecoveryCode", { mode: "join" })}
-                  />
-                )
+              {!localKeyId ? (
+                <Button
+                  title="去家庭与设备"
+                  testID="remote-family"
+                  disabled={busy || syncing}
+                  onPress={() => nav.navigate("Family")}
+                />
+              ) : status.keyId && status.keyId !== localKeyId ? (
+                <ErrorText message="这台手机的钥匙和家里远端的对不上，请到「家庭与设备」退出后重新加入。" />
               ) : (
                 <Button
-                  title="开始一起写"
-                  testID="remote-enable"
+                  title={status.manifests > 0 ? "加入一起写" : "开始一起写"}
+                  testID={status.manifests > 0 ? "remote-resume" : "remote-enable"}
                   disabled={busy || syncing}
-                  onPress={() => { void enable(); }}
+                  onPress={share}
                 />
               )}
               {stop}
@@ -402,16 +354,6 @@ export function FamilyCard({
           </View>
           <View style={s.row}>
             <Button
-              title="查看恢复码"
-              kind="text"
-              compact
-              testID="remote-code"
-              disabled={busy || syncing}
-              onPress={() => {
-                void showCode();
-              }}
-            />
-            <Button
               title="验证远端"
               kind="text"
               compact
@@ -420,15 +362,6 @@ export function FamilyCard({
               onPress={() => {
                 void verify();
               }}
-            />
-            <Button
-              title="退出一起写"
-              kind="text"
-              compact
-              danger
-              testID="remote-disable"
-              disabled={busy || syncing}
-              onPress={disable}
             />
           </View>
           {isOwner && (
@@ -444,7 +377,7 @@ export function FamilyCard({
           )}
           <Text style={s.footnote}>
             钥匙指纹 {remote.keyId.slice(0, 8)}
-            。恢复码就是钥匙，丢了谁也打不开远端的内容；请抄在纸上收好。
+            。钥匙只在获准的手机上；家庭恢复码在管理者手里。
           </Text>
         </>
       )}
