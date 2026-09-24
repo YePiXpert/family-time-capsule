@@ -74,7 +74,10 @@ export function cpaTranscriber(baseUrl:string,keyFile:string,model='mimo-v2.5-as
    raw=Buffer.concat(chunks).toString('utf8');
   } catch(error) {if(error instanceof Problem)throw error;throw unavailable();}
   try {
-   const data=JSON.parse(raw),result=transcribeResultSchema.parse({text:data.choices?.[0]?.message?.content});
+   const data=JSON.parse(raw),choice=data.choices?.[0];
+   // 部分兼容网关省略结束原因；有标记时，只接受完整结束，不能把截断的口述当成转写成功。
+   if(choice?.finish_reason!==undefined&&choice.finish_reason!=='stop')throw invalidResult();
+   const result=transcribeResultSchema.parse({text:choice?.message?.content});
    return {...result,tokens:Number.isSafeInteger(data.usage?.total_tokens)&&data.usage.total_tokens>=0?data.usage.total_tokens:null};
   } catch {throw invalidResult();}
  };
