@@ -27,17 +27,19 @@ import { forgetDeviceKey } from "./keys";
 import {
   approveJoin,
   cancelJoin,
+  completeFamilyStart,
   inspectJoin,
   pollJoin,
+  prepareFamilyStart,
   recoverAsAdmin,
   recoveryAdmins,
   regenerateRecovery,
   requestToJoin,
-  startFamily,
   upgradeFamily,
   type Inspected,
   type JoinRequest,
   type JoinedFamily,
+  type PreparedFamilyStart,
 } from "./pairing";
 import { Qr } from "./Qr";
 import { Scanner } from "./Scanner";
@@ -53,6 +55,7 @@ type Step =
   | { kind: "upgrade" }
   | { kind: "home"; family: FamilyInfo; overview: Overview | null }
   | { kind: "start" }
+  | { kind: "startWords"; prepared: PreparedFamilyStart }
   | { kind: "words"; words: string }
   | { kind: "join" }
   | { kind: "qr"; join: JoinRequest }
@@ -66,12 +69,13 @@ export const roleLabel = (role: Role) => (role === "admin" ? "管理者" : "家�
 const defaultDeviceName = () => (Platform.OS === "ios" ? "iPhone" : "安卓手机");
 const POLL_MS = 2500;
 /** 与服务端的保护同一条规则：启用的管理者名下、已确认未停用的设备只剩这一台。 */
-export function isLastAdminDevice(overview: Overview, deviceId: string): boolean {
+export function isLastAdminDevice(overview: Overview, deviceId: string, now = Date.now()): boolean {
   const admins = new Set(
     overview.members.filter((m) => m.role === "admin" && m.enabled).map((m) => m.id),
   );
   const active = overview.devices.filter(
-    (d) => admins.has(d.member_id) && !d.revoked && !d.pending,
+    (d) => admins.has(d.member_id) && !d.revoked && !d.pending &&
+      (d.last_used_at ?? d.created_at) >= now - 365 * 24 * 60 * 60 * 1000,
   );
   return active.length === 1 && active[0]!.id === deviceId;
 }
@@ -162,10 +166,10 @@ export function FamilyScreen({ navigation }: Props<"Family">) {
   }, [api, load]);
   // 恢复码还没核对完就离开：说清楚后果，由人决定。
   useEffect(() => {
-    if (step.kind !== "words") return;
+    if (step.kind !== "words" && step.kind !== "startWords") return;
     return navigation.addListener("beforeRemove", (event) => {
       event.preventDefault();
-      Alert.alert("恢复码还没核对完", "离开后就再也看不到这 12 个词了，只能重新生成一套。", [
+      Alert.alert("恢复码还没核对完", "离开后这一页不会保留。请先抄好纸上的恢复码；如果家庭已经创建，用它可以找回。", [
         { text: "留下", style: "cancel" },
         { text: "离开", style: "destructive", onPress: () => navigation.dispatch(event.data.action) },
       ]);
@@ -291,13 +295,12 @@ export function FamilyScreen({ navigation }: Props<"Family">) {
                 );
               if (!claimSync()) throw new Error("正在同步，等它完成再试。");
               try {
-                await leaveFamily({ transport: createTransport(), signal });
+                await leaveFamily({ transport: createTransport(), signal, revokeDevice: () => api.leave() });
+                await forgetToken();
+                await forgetDeviceKey();
               } finally {
                 markSyncRunning(false);
               }
-              await api.leave();
-              await forgetToken();
-              await forgetDeviceKey();
               await load("已退出家庭。本机的时光和照片都留着。");
             }),
         },
@@ -425,18 +428,53 @@ export function FamilyScreen({ navigation }: Props<"Family">) {
               disabled={busy || !code.trim() || !memberName.trim() || !deviceName.trim()}
               onPress={() =>
                 void run(async () => {
-                  const done = await startFamily(
+                  const prepared = await prepareFamilyStart(
                     { api },
                     { activationCode: code, memberName, deviceName },
                   );
                   setCode("");
-                  go({ kind: "words", words: done.words });
+                  go({ kind: "startWords", prepared });
                 })
               }
             />
             {back("取消")}
           </View>
         </Card>
+      );
+      break;
+    case "startWords":
+      body = (
+        <>
+          <RecoveryWords
+            words={step.prepared.words}
+            busy={busy}
+            submitError={error}
+            confirmTitle={busy ? "正在开始…" : "核对并开始家庭"}
+            onDone={() =>
+              void run(async () => {
+                await completeFamilyStart({ api }, step.prepared);
+                await load("家庭已开始，恢复码已核对。请把那张纸收好。");
+              })
+            }
+          />
+          {!!error && (
+            <>
+              <Text style={s.muted}>服务可能已经建好家庭。如果刚才没能完成，可以用纸上这套恢复码找回。</Text>
+              <Button
+                title="用刚抄下的恢复码找回"
+                kind="text"
+                testID="family-start-recover"
+                disabled={busy}
+                onPress={() =>
+                  void run(async () => {
+                    const { secret, admins } = await recoveryAdmins({ api }, step.prepared.words);
+                    go({ kind: "pick", secret, admins });
+                  })
+                }
+              />
+            </>
+          )}
+        </>
       );
       break;
     case "words":

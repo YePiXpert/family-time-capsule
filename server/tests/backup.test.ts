@@ -18,6 +18,8 @@ const KEY='0123456789abcdef',INDEX='QUJD';
 function fixture() {
  const dir=mkdtempSync(join(tmpdir(),'anan-backup-test-'));
  const store=new Store(':memory:'),backups=new BackupStore(dir);
+ // 容量保护另有用例；上传逻辑测试不依赖运行机器刚好剩下 5 GiB。
+ backups.freeBytes=async()=>10*1024**3;
  const app=createApp(store,async()=>{throw new Error('no provider in this test');},'test',backups,unusedTranscribe);
  const owner=seedFamily(store);
  const member=addMember(store,'家人','家人手机');
@@ -63,6 +65,39 @@ test('two devices uploading the same object at once count it once and keep the f
  assert.equal(status.objects,1);assert.equal(status.bytes,200000);
  assert.deepEqual(readdirSync(join(f.dir,'tmp')),[]);
  await f.close();
+});
+test('concurrent uploads recheck the shared quota before committing either object',async t=>{
+ const f=fixture();t.after(f.close);
+ f.setLimit(f.owner.member.id,1000);
+ const receive=f.backups.receive.bind(f.backups);
+ let arrived=0,release!:()=>void;
+ const ready=new Promise<void>(resolve=>{release=resolve;});
+ t.mock.method(f.backups,'receive',async(...args:Parameters<BackupStore['receive']>)=>{
+  if(++arrived===2)release();
+  await ready;
+  return receive(...args);
+ });
+ const results=await Promise.all([f.put(oid(80),randomBytes(800)),f.put(oid(81),randomBytes(800),f.other.token)]);
+ assert.deepEqual(results.map(r=>r.statusCode).sort(),[201,413]);
+ assert.equal(results.find(r=>r.statusCode===413)!.json().code,'QUOTA_FULL');
+ assert.deepEqual(f.backups.usage(),{objects:1,bytes:800});
+ assert.deepEqual(readdirSync(join(f.dir,'tmp')),[]);
+});
+test('an upload revoked while receiving cannot commit an object',async t=>{
+ const f=fixture();t.after(f.close);
+ const receive=f.backups.receive.bind(f.backups);
+ t.mock.method(f.backups,'receive',async(id:string,stream:AsyncIterable<Buffer|Uint8Array>,options:Parameters<BackupStore['receive']>[2])=>{
+  async function* revokedStream(){
+   for await(const chunk of stream)yield chunk;
+   f.store.revoke(f.member.member.deviceId!);
+  }
+  return receive(id,revokedStream(),options);
+ });
+ const result=await f.put(oid(82),randomBytes(800));
+ assert.equal(result.statusCode,401);
+ assert.equal(f.backups.stat(oid(82)),null);
+ assert.deepEqual(f.backups.usage(),{objects:0,bytes:0});
+ assert.deepEqual(readdirSync(join(f.dir,'tmp')),[]);
 });
 test('mismatched, empty or malformed uploads are rejected and leave nothing behind',async()=>{
  const f=fixture();const bytes=randomBytes(1000);

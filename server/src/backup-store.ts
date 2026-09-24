@@ -76,7 +76,7 @@ export class BackupStore {
   async receive(
     id: string,
     stream: AsyncIterable<Buffer | Uint8Array>,
-    options: { declared?: number; sha256: string; limit?: number; quotaLeft?: number },
+    options: { declared?: number; sha256: string; limit?: number; quotaLeft?: number | (() => number); beforeCommit?: () => void },
   ): Promise<{ bytes: number; created: boolean }> {
     const target = this.objectPath(id);
     const limit = options.limit ?? OBJECT_LIMIT;
@@ -102,8 +102,11 @@ export class BackupStore {
       if (!bytes) throw new Problem(400, 'OBJECT_CORRUPT', '上传内容为空。');
       if (options.declared !== undefined && options.declared !== bytes) throw new Problem(400, 'OBJECT_CORRUPT', '上传内容不完整，请重试。');
       if (hash.digest('hex') !== options.sha256) throw new Problem(400, 'OBJECT_CORRUPT', '上传内容校验失败，请重试。');
+      // 上传期间权限、家庭余量都可能变化；同步复核后立即落盘，不能夹入另一次上传。
+      options.beforeCommit?.();
       const previous = this.stat(id);
-      if (options.quotaLeft !== undefined && bytes - (previous ?? 0) > options.quotaLeft) throw new Problem(413, 'QUOTA_FULL', '远端备份空间已用完，请联系管理者调整。');
+      const quotaLeft = typeof options.quotaLeft === 'function' ? options.quotaLeft() : options.quotaLeft;
+      if (quotaLeft !== undefined && bytes - (previous ?? 0) > quotaLeft) throw new Problem(413, 'QUOTA_FULL', '远端备份空间已用完，请联系管理者调整。');
       if (previous !== null) {
         rmSync(temp, { force: true });
         return { bytes, created: false };

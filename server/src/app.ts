@@ -178,7 +178,8 @@ export function createApp(store:Store,provider:Provider,version:string,backupSto
    for await(const chunk of req.body as Readable){bytes+=chunk.length;if(bytes>audioLimit)throw audioTooLong();chunks.push(chunk);}
    if(!bytes||bytes!==Number(req.headers['content-length']))throw new Problem(400,'INVALID_INPUT','录音内容为空或不完整。');
    const input=Buffer.concat(chunks,bytes),fingerprint=createHash('sha256').update(input).digest('hex');
-   const status=store.reserve(member,requestId,fingerprint,0,1,model,'transcribe');
+   // 上传期间设备可能已被停用，额度也可能被管理者修改；入账前重新读取权限。
+   const status=store.reserve(auth(req.headers.authorization),requestId,fingerprint,0,1,model,'transcribe');
    if(status!=='new')throw new Problem(409,status==='processing'?'REQUEST_PENDING':'RESULT_EXPIRED',status==='processing'?'这次请求仍在处理中，请稍后重试。':'这次请求已结束，结果无法恢复；请重新转写。');
    reserved=true;
    let audio:{wav:Buffer;seconds:number};
@@ -189,6 +190,8 @@ export function createApp(store:Store,provider:Provider,version:string,backupSto
     throw new Problem(400,'INVALID_AUDIO','这段录音读不出来，换一段试试。');
    }
    if(audio.seconds>180)throw audioTooLong();
+   // 转码会等待子进程；停用后的手机不能在这里再发起付费的上游调用。
+   auth(req.headers.authorization);
    let output:{text:string;tokens:number|null};
    try {output=await transcribe.transcriber(audio.wav);}
    catch(error){if(error instanceof Problem&&error.code==='INVALID_RESULT')throw error;throw new Problem(502,'UPSTREAM_UNAVAILABLE','转文字暂时不可用，请稍后重试。');}
@@ -248,7 +251,7 @@ export function createApp(store:Store,provider:Provider,version:string,backupSto
   uploading.set(lane,active+1);
   try {
    store.claimObjects(member.deviceId!,[id]);
-   const result=await backupStore.receive(id,req.body as Readable,{declared,sha256,limit:OBJECT_LIMIT,quotaLeft:left});
+   const result=await backupStore.receive(id,req.body as Readable,{declared,sha256,limit:OBJECT_LIMIT,quotaLeft,beforeCommit:()=>{auth(req.headers.authorization);}});
    store.claimObjects(member.deviceId!,[id]);
    return reply.code(result.created?201:200).send({id,bytes:result.bytes});
   } finally {

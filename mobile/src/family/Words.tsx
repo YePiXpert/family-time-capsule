@@ -18,7 +18,19 @@ export function firstWrong(words: string[], positions: number[], typed: string[]
  * 新恢复码：先摆出 12 个词让管理者抄在纸上，再随机抽 3 个核对，核对过才算完成。
  * 这是唯一一次能看到它；离开这一页就只能重新生成一套。
  */
-export function RecoveryWords({ words, onDone }: { words: string; onDone: () => void }) {
+export function RecoveryWords({
+  words,
+  onDone,
+  busy = false,
+  submitError = "",
+  confirmTitle = "核对",
+}: {
+  words: string;
+  onDone: () => void;
+  busy?: boolean;
+  submitError?: string;
+  confirmTitle?: string;
+}) {
   const s = useStyles();
   const list = useMemo(() => words.split(" "), [words]);
   const positions = useMemo(() => checkPositions(), []);
@@ -44,7 +56,8 @@ export function RecoveryWords({ words, onDone }: { words: string; onDone: () => 
           ))}
         </View>
         <Text style={s.footnote}>恢复码不是备份：它能解开远端已有的内容，变不出远端没有的。定期导出完整备份照旧要做。</Text>
-        <Button title="我已抄在纸上" primary testID="family-words-written" onPress={() => setChecking(true)} />
+        <ErrorText message={submitError} />
+        <Button title="我已抄在纸上" primary testID="family-words-written" disabled={busy} onPress={() => setChecking(true)} />
       </Card>
     );
   return (
@@ -57,6 +70,7 @@ export function RecoveryWords({ words, onDone }: { words: string; onDone: () => 
             key={at}
             label={`第 ${at + 1} 个`}
             value={typed[i]}
+            editable={!busy}
             autoCapitalize="none"
             autoCorrect={false}
             autoComplete="off"
@@ -69,20 +83,20 @@ export function RecoveryWords({ words, onDone }: { words: string; onDone: () => 
           />
         ))}
       </View>
-      <ErrorText message={error} />
+      <ErrorText message={error || submitError} />
       <View style={s.row}>
         <Button
-          title="核对"
+          title={confirmTitle}
           primary
           testID="family-words-verify"
-          disabled={typed.some((t) => !t.trim())}
+          disabled={busy || typed.some((t) => !t.trim())}
           onPress={() => {
             const wrong = firstWrong(list, positions, typed);
             if (wrong === null) onDone();
             else setError(`第 ${wrong + 1} 个词不对。回去再看一眼纸上抄的。`);
           }}
         />
-        <Button title="回去再看" kind="text" onPress={() => setChecking(false)} />
+        <Button title="回去再看" kind="text" disabled={busy} onPress={() => setChecking(false)} />
       </View>
     </Card>
   );
