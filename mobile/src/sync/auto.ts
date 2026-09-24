@@ -28,6 +28,8 @@ export function createAutoSync(deps: AutoSyncDeps) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let controller: AbortController | undefined;
   let running = false;
+  // 同步进行中、取定上传那一版之后又有改动：这一轮带不走，结束后补排一轮。
+  let dirty = false;
   let foreground = true;
   let disposed = false;
   const clearTimer = () => {
@@ -70,6 +72,10 @@ export function createAutoSync(deps: AutoSyncDeps) {
     } finally {
       running = false;
       controller = undefined;
+      if (dirty && !disposed && foreground) {
+        dirty = false;
+        schedule();
+      }
     }
   };
   const onBackground = () => {
@@ -85,8 +91,13 @@ export function createAutoSync(deps: AutoSyncDeps) {
     },
     onBackground,
     onLibraryChange() {
-      if (disposed || !foreground || running) return;
-      schedule();
+      if (disposed || !foreground) return;
+      if (running) dirty = true;
+      else schedule();
+    },
+    /** 这一轮已取定要上传的库：之前的改动（含本轮合并写入）都在里面。 */
+    snapshotTaken() {
+      dirty = false;
     },
     dispose() {
       disposed = true;
@@ -123,7 +134,12 @@ export function useAutoSync(store: LocalStore): void {
         try {
           const key = await loadKey();
           if (!key || signal.aborted) return;
-          await runFamilySync(store, { transport: createTransport(), key, signal });
+          await runFamilySync(store, {
+            transport: createTransport(),
+            key,
+            signal,
+            onSnapshot: () => auto.snapshotTaken(),
+          });
         } finally {
           markSyncRunning(false);
         }

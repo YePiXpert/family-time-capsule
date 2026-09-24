@@ -220,6 +220,8 @@ async function syncFamily(
   const ownIndex = own
     ? parseIndex(openSmall(deps.key, INDEX_LABEL, fromBase64(own.index)))
     : undefined;
+  // 上传的就是这一刻的库（下面两次 store.get() 与这里在同一段同步代码里）。
+  deps.onSnapshot?.();
   // meta.createdAt 让清单字节每次不同，所以要比实体段而不是整份清单。
   const unchanged =
     state.lastPush &&
