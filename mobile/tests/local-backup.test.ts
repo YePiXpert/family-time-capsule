@@ -1214,6 +1214,51 @@ it("stops without replacing anything when writes keep landing during the restore
   ).rejects.toThrow("没有被替换");
   expect(store.get().profile.name).toBe("恢复前的名字");
 });
+it.each(["before queue", "inside queue"])("cancels restore %s without replacing the library or removing current media", async (when) => {
+  const { store, backup, files } = await setup();
+  const out = await backup.createBackup(store.get());
+  await store.change((s) => { s.profile.name = "恢复前的名字"; });
+  const originalMedia = store.get().media;
+  const originalFiles = fs.readdirSync(files.mediaDirectory.uri).sort();
+  const controller = new AbortController();
+  await expect(backup.restoreBackup(store, out, (stage) => {
+    if (!stage.includes("写入本机资料")) return;
+    if (when === "before queue") controller.abort();
+    else void store.change(() => { controller.abort(); });
+  }, controller.signal)).rejects.toBeInstanceOf(backup.BackupStopped);
+  expect(store.get().profile.name).toBe("恢复前的名字");
+  expect(store.get().media).toEqual(originalMedia);
+  expect(fs.readdirSync(files.mediaDirectory.uri).sort()).toEqual(originalFiles);
+  expect(readLibrary(env.database!)).toEqual(store.get());
+});
+it("does not create a backup when an empty-library operation has already been stopped", async () => {
+  const { openLocalStore } = await import("../src/local/disk");
+  const backup = await import("../src/local/backup");
+  const store = await openLocalStore();
+  const controller = new AbortController();
+  controller.abort();
+  await expect(backup.createBackup(store.get(), undefined, controller.signal))
+    .rejects.toBeInstanceOf(backup.BackupStopped);
+  expect(backup.retainedBackups()).toEqual([]);
+});
+it("stops extracting a legacy backup midway and removes its partial files", async () => {
+  const { store, backup, files } = await setup();
+  const { File } = await import("expo-file-system");
+  const { encodeHeader } = await import("../src/local/backup-format");
+  const input = new File(path.join(env.root, "legacy-cancel.xmb"));
+  const state = store.get();
+  fs.writeFileSync(input.uri, Buffer.concat([
+    encodeHeader(state),
+    ...Object.keys(state.media).sort().map((id) => fs.readFileSync(files.mediaFile(state.media[id]!).uri)),
+  ]));
+  const originalFiles = fs.readdirSync(files.mediaDirectory.uri).sort();
+  const controller = new AbortController();
+  const extracting = backup.inspectBackup(input, true, controller.signal);
+  controller.abort();
+  await expect(extracting).rejects.toBeInstanceOf(backup.BackupStopped);
+  expect(store.get()).toBe(state);
+  expect(fs.readdirSync(files.mediaDirectory.uri).sort()).toEqual(originalFiles);
+});
 it("keeps the photos a conflict's other version needs when the backup predates them", async () => {
   const { store, backup, files } = await setup();
   const out = await backup.createBackup(store.get());

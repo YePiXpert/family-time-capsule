@@ -273,6 +273,7 @@ async function writeManifestTo(
   onProgress?: RestoreProgress,
   signal?: AbortSignal,
 ): Promise<void> {
+  if (signal?.aborted) throw new BackupStopped();
   ensureDirectories();
   state = withoutPendingRecordings(state);
   const entities = encodeEntities(state);
@@ -294,6 +295,7 @@ async function writeManifestTo(
     await ensureBlob(owners.get(blob.sha256)!, blob);
     onProgress?.(`正在整理照片 ${++done}/${blobs.length}`);
   }
+  if (signal?.aborted) throw new BackupStopped();
   // 被系统中断时只留下半成品，不进入保留列表，也不阻塞 blob 回收。
   const part = new File(directory, `${out.name}.part`);
   try {
@@ -307,6 +309,7 @@ async function writeManifestTo(
       handle.close();
     }
     await verifyManifest(part);
+    if (signal?.aborted) throw new BackupStopped();
     await part.move(out, { overwrite });
   } catch (e) {
     if (part.exists) part.delete();
@@ -699,6 +702,7 @@ async function inspectV1(
   head: Uint8Array,
   extract: boolean,
   written: File[],
+  signal?: AbortSignal,
 ): Promise<Library> {
   const length = headLength(head);
   if (length > HEADER_LIMIT || length > file.size - 12)
@@ -711,13 +715,14 @@ async function inspectV1(
     throw new Error("备份文件长度不完整。");
   ensureDirectories();
   for (const id of manifest.mediaOrder) {
+    if (signal?.aborted) throw new BackupStopped();
     const m = state.media[id]!;
     const target = extract ? extractTarget(m) : null;
     if (target) {
       target.create();
       written.push(target);
     }
-    await drainBlob(h, m.bytes, target, m.sha256, m.name);
+    await drainBlob(h, m.bytes, target, m.sha256, m.name, signal);
     // 旧版备份同样不能把当前库仍在用的缩略图带入恢复失败的清理范围。
     if (target) state.media[id] = { ...m, file: target.name, thumb: undefined };
   }
@@ -732,6 +737,7 @@ export async function inspectBackup(
   extract = false,
   signal?: AbortSignal,
 ): Promise<Library> {
+  if (signal?.aborted) throw new BackupStopped();
   const files = Array.isArray(input) ? input : [input];
   if (!files.length) throw new Error("请选择备份文件。");
   for (const file of files)
@@ -746,7 +752,7 @@ export async function inspectBackup(
         if (isMagic(head, BACKUP_MAGIC_V3))
           return await inspectManifest(h, file, head, extract, written, signal);
         if (isMagic(head, BACKUP_MAGIC))
-          return await inspectV1(h, file, head, extract, written);
+          return await inspectV1(h, file, head, extract, written, signal);
         if (!isMagic(head, BACKUP_MAGIC_V2))
           throw new Error(`请选择${APP_NAME} .xmb 备份文件。`);
       } finally {
@@ -836,6 +842,8 @@ export async function restoreBackup(
       onProgress?.("正在写入本机资料…");
       try {
         await store.change((current) => {
+          // 停止也可能发生在等写队列时；切换当前库之前必须再检查一次。
+          if (signal?.aborted) throw new BackupStopped();
           // 「恢复前」那份备份之后本机又写过（分享进来的照片、编辑页落盘、同步）：
           // 换掉就只剩那份备份里没有的空白，所以不换，回头连它一起再备份一次。
           if (store.get() !== snapshot) throw new ChangedDuringRestore();
