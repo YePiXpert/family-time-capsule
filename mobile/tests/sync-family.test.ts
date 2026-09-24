@@ -99,7 +99,11 @@ function fakeRemote() {
     async get(id) {
       log.push(`get ${id}`);
       const bytes = objects.get(id);
-      if (!bytes) throw new Error("缺少对象");
+      if (!bytes) {
+        // 与真服务一样回 404；类要从被测模块同一份注册表里取。
+        const { SyncError } = await import("../src/sync/transport");
+        throw new SyncError("NOT_FOUND", "远端没有这一份。", 404);
+      }
       return bytes;
     },
     async putManifest(keyId, index, ids) {
@@ -580,13 +584,70 @@ it("远端清单能解密但全文 sha 对不上时，本机不变且没有半�
   const id = objectIdOf(key, published.index.sha256, 0);
   const { objectsOf } = await import("../src/sync/planner");
   const plan = objectsOf(published.index.sha256, published.index.bytes)[0]!;
+  const good = remote.objects.get(id)!;
   remote.objects.set(id, sealObject(key, plan, [new Uint8Array(plan.bytes)]));
   const before = p.store.get();
-  await expect(p.family.joinFamily(p.store, key, deps)).rejects.toThrow(
-    "对不上",
-  );
-  expect(p.store.get()).toBe(before);
+  // 别人那份坏了只跳过那一台：本机照常加入、发布自己的清单，不写库、不留半份素材，结果里说清楚。
+  const joined = await p.family.joinFamily(p.store, key, deps);
+  expect(joined.lastSyncSummary).toMatchObject({ pulled: 0, unread: 1 });
+  expect(joined.seen["爸爸手机"]).toBeUndefined();
+  expect(p.store.get().records).toEqual(before.records);
   expect(directoryBytes(p.files.mediaDirectory.uri)).toEqual({});
+  // 那一份修好（对方重新发布）后，下一轮照常并进来。
+  remote.objects.set(id, good);
+  const next = await p.family.runFamilySync(p.store, deps);
+  expect(next.lastSyncSummary!.unread).toBeUndefined();
+  expect(p.store.get().records["r-a"]?.text).toBe("她笑了");
+});
+it("别人的一张照片在远端缺了：只跳过带着它的那一台，其他手机的改动照常并入并发布", async () => {
+  // 被测手机最后建：假远端抛的 SyncError 要与它同一份模块注册表。
+  const remote = fakeRemote();
+  const third = await phone();
+  await third.add("c", "外婆写的", "外婆", false);
+  await third.engine.pushManifest(third.store.get(), {
+    transport: remote.client("外婆手机"),
+    key,
+  });
+  const sender = await phone();
+  await sender.add("a", "她笑了", "爸爸");
+  await sender.add("b", "她翻身了", "妈妈");
+  await sender.engine.pushManifest(sender.store.get(), {
+    transport: remote.client("爸爸手机"),
+    key,
+  });
+  const photo = sender.store.get().media["m-a"]!;
+  const p = await phone();
+  const deps = { transport: remote.client("妈妈手机"), key };
+  const lost = objectIdOf(key, photo.sha256, 0);
+  const bytes = remote.objects.get(lost)!;
+  remote.objects.delete(lost);
+  const publish = vi.spyOn(deps.transport, "putManifest");
+  const result = await p.family.joinFamily(p.store, key, deps);
+  expect(publish).toHaveBeenCalledTimes(1);
+  expect(result.lastSyncSummary).toMatchObject({ unread: 1 });
+  expect(Object.keys(p.store.get().records)).toEqual(["r-c"]);
+  expect(result.seen["爸爸手机"]).toBeUndefined();
+  remote.objects.set(lost, bytes);
+  await p.family.runFamilySync(p.store, deps);
+  expect(Object.keys(p.store.get().records).sort()).toEqual(["r-a", "r-b", "r-c"]);
+});
+it("读不了的是本机自己的旧清单（清过同步状态）：整轮报错、不发布，免得换掉那份历史", async () => {
+  const { receiver: p, remote, deps } = await seeded();
+  const first = await p.family.joinFamily(p.store, key, deps);
+  const own = remote.manifests.get("妈妈手机")!;
+  const { parseIndex, INDEX_LABEL } = await import("../src/sync/engine");
+  const { openSmall, fromBase64 } = await import("../src/sync/crypto");
+  const index = parseIndex(openSmall(key, INDEX_LABEL, fromBase64(own.index)));
+  remote.objects.delete(objectIdOf(key, index.sha256, 0));
+  p.state.clearSyncFiles();
+  p.state.writeRemoteState(p.state.freshRemoteState(keyIdOf(key)));
+  const publish = vi.spyOn(deps.transport, "putManifest");
+  await expect(p.family.runFamilySync(p.store, deps)).rejects.toMatchObject({
+    code: "NOT_FOUND",
+  });
+  expect(publish).not.toHaveBeenCalled();
+  expect(remote.manifests.get("妈妈手机")!.index).toBe(own.index);
+  expect(first.deviceId).toBe("妈妈手机");
 });
 it("最新钥匙不同则拒绝同步，错误恢复码不会替换钥匙或同步状态", async () => {
   const { receiver: p, deps } = await seeded();

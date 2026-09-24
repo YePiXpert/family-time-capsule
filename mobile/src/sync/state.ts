@@ -29,6 +29,8 @@ export type SyncSummary = {
   pulled: number;
   pushed: number;
   conflicts: number;
+  /** 这一次没读成的手机数（它在远端的那份缺了或对不上），下次同步再试。 */
+  unread?: number;
 };
 export type RemoteState = {
   version: 2;
@@ -48,6 +50,13 @@ export type RemoteState = {
   lastSyncSummary?: SyncSummary;
   lastError?: string;
 };
+/** 有手机这一轮没读成时的一句提示；都读到了就是空串。 */
+export function unreadNotice(summary: SyncSummary | undefined): string {
+  const n = summary?.unread ?? 0;
+  return n > 0
+    ? `有 ${n} 台手机的内容这次没读到（它在远端的那份缺了或对不上），下次同步会再试。`
+    : "";
+}
 /** Build 70／71 的远端备份状态：读到就升成 v2。 */
 type RemoteStateV1 = {
   version: 1;

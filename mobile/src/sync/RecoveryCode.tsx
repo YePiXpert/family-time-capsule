@@ -14,7 +14,7 @@ import {
 import { keyFromMnemonic, mnemonicOf } from "./crypto";
 import { joinFamily } from "./family";
 import { claimSync, markSyncRunning } from "./status";
-import { loadKey } from "./state";
+import { loadKey, unreadNotice } from "./state";
 import { SyncError, createTransport } from "./transport";
 /**
  * 恢复码页。show：把这台手机的 12 个词摆出来抄；join：输入 12 个词，加入家人一起写。
@@ -64,7 +64,9 @@ export function RecoveryCode({ route, navigation }: Props<"RecoveryCode">) {
         signal: abort.signal,
       });
       setJoined(true);
-      setMessage(`已加入，${result.lastSyncSummary?.devices ?? 1} 台手机在一起写。`);
+      setMessage(
+        `已加入，${result.lastSyncSummary?.devices ?? 1} 台手机在一起写。${unreadNotice(result.lastSyncSummary)}`,
+      );
     } catch (e) {
       if (e instanceof SyncError && e.code === "CANCELED")
         setMessage("已停止。");

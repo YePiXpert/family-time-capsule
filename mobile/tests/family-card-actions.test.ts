@@ -40,6 +40,7 @@ vi.mock("../src/sync/state", () => ({
   clearRemoteState: env.clear, clearSyncFiles: env.clear, forgetKey: env.forget,
   freshRemoteState: vi.fn(), loadKey: async () => env.key, readRemoteState: async () => null, readConflicts: async () => [],
   storeKey: vi.fn(), writeRemoteState: vi.fn(),
+  unreadNotice: (summary?: { unread?: number }) => (summary?.unread ? `有 ${summary.unread} 台手机的内容这次没读到` : ""),
 }));
 vi.mock("../src/sync/transport", () => ({
   SyncError: class extends Error {},
@@ -105,6 +106,13 @@ it("只有冲突的同步结果说明两台手机都改过，不显示已经最�
   const setMessage = env.setters[3]!;
   await vi.waitFor(() => expect(setMessage).toHaveBeenLastCalledWith(expect.stringContaining("1 段两台手机都改过")));
   expect(setMessage.mock.calls.at(-1)![0]).not.toContain("最新");
+});
+it("有手机没读成时同步结果照实说出来", async () => {
+  env.sync.mockResolvedValueOnce({ lastSyncSummary: { pulled: 1, pushed: 0, conflicts: 0, unread: 1 } });
+  find(render(), "remote-backup")!.props!.onPress!();
+  const setMessage = env.setters[3]!;
+  await vi.waitFor(() => expect(setMessage).toHaveBeenLastCalledWith(expect.stringContaining("有 1 台手机的内容这次没读到")));
+  expect(setMessage.mock.calls.at(-1)![0]).toContain("并入 1 处改动");
 });
 it("令牌未读完时只有标题与正在读取，没有远端动作按钮", () => {
   const tree = render(false, false, null, null, null);

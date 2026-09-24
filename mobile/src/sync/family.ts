@@ -102,6 +102,24 @@ async function materialize(
   return { ...m, ...rendered };
 }
 
+/**
+ * 某一台的资料本身读不了（对象缺了、对不上、解不开）：跳过那一台，别让它拦下本机与其他人的同步。
+ * 网络、登录、服务端出错、写盘失败与停止不算，照常整轮失败、下次重来。
+ */
+function unreadable(e: unknown): boolean {
+  return (
+    e instanceof SyncError && (e.code === "NOT_FOUND" || e.code === "CORRUPT")
+  );
+}
+/** 解索引、解清单只在内存里算：这里的普通错误就是内容坏了。 */
+function undecodable(e: unknown): boolean {
+  return (
+    unreadable(e) ||
+    (e instanceof Error &&
+      !(e instanceof SyncError) &&
+      !(e instanceof BackupStopped))
+  );
+}
 /** 准备文件不占写队列；最终合并一定用写队列里的新鲜资料。 */
 export async function runFamilySync(
   store: LocalStore,
@@ -126,46 +144,95 @@ async function syncFamily(
   const seen = { ...state.seen };
   deps.onProgress?.("正在读取远端清单…");
   const entries = await deps.transport.manifests(deps.signal);
-  const snapshots: RemoteSnapshot[] = [];
-  const manifests: Awaited<ReturnType<typeof fetchManifestOf>>[] = [];
+  let snapshots: RemoteSnapshot[] = [];
+  const manifests = new Map<
+    string,
+    Awaited<ReturnType<typeof fetchManifestOf>>
+  >();
   const pins: File[] = [];
+  // 读不了的那几台这一轮先不并、也不记作已读，下一轮再试；记下原因，读不了的是本机自己时照原样报错。
+  const unread = new Map<string, unknown>();
   ensureDirectories();
   for (const entry of entries) {
     throwIfAborted(deps.signal);
     // 异钥匙残留不能用当前钥匙解索引；最新清单的钥匙已在入口核过。
     if (entry.keyId !== keyId) continue;
-    const index = parseIndex(
-      openSmall(deps.key, INDEX_LABEL, fromBase64(entry.index)),
-    );
-    if (seen[entry.deviceId] === index.sha256) continue;
-    const manifest = await fetchManifestOf(entry, deps);
-    const library = decodeLibraryV2(manifest.meta, manifest.entities);
-    manifests.push(manifest);
+    let read: {
+      manifest: Awaited<ReturnType<typeof fetchManifestOf>>;
+      library: RemoteSnapshot["library"];
+    };
+    try {
+      const index = parseIndex(
+        openSmall(deps.key, INDEX_LABEL, fromBase64(entry.index)),
+      );
+      if (seen[entry.deviceId] === index.sha256) continue;
+      const manifest = await fetchManifestOf(entry, deps);
+      read = {
+        manifest,
+        library: decodeLibraryV2(manifest.meta, manifest.entities),
+      };
+    } catch (e) {
+      if (!undecodable(e)) throw e;
+      unread.set(entry.deviceId, e);
+      continue;
+    }
+    manifests.set(entry.deviceId, read.manifest);
     snapshots.push({
       deviceId: entry.deviceId,
       deviceName: entry.deviceName,
-      createdAt: manifest.meta.createdAt,
-      library,
+      createdAt: read.manifest.meta.createdAt,
+      library: read.library,
     });
-    pins.push(pinManifest(manifest.bytes, index.sha256));
-    seen[entry.deviceId] = index.sha256;
+    pins.push(pinManifest(read.manifest.bytes, read.manifest.index.sha256));
   }
   const now = new Date().toISOString();
   let merged = mergeLibraries(store.get(), snapshots, base, now);
-  const blobs = new Map(
-    manifests.flatMap(({ meta }) =>
-      meta.blobs.map((b) => [b.sha256, b] as const),
-    ),
-  );
-  let done = 0;
-  for (const m of merged.wantedMedia) {
-    throwIfAborted(deps.signal);
-    const blob = blobs.get(m.sha256);
-    if (!blob || blob.bytes !== m.bytes)
-      throw new SyncError("CORRUPT", `远端这张照片对不上：${m.name}`);
-    await downloadBlob(blob, deps, m.name);
-    deps.onProgress?.(`正在下载 ${++done}/${merged.wantedMedia.length}`);
+  // 一张照片在远端缺了或对不上：带着它的那几台这一轮不并，合并重来；每次至少少一台，必然收敛。
+  for (;;) {
+    const blobs = new Map(
+      snapshots.flatMap(({ deviceId }) =>
+        manifests
+          .get(deviceId)!
+          .meta.blobs.map((b) => [b.sha256, b] as const),
+      ),
+    );
+    let done = 0;
+    let broken: LocalMedia | undefined;
+    let cause: unknown;
+    for (const m of merged.wantedMedia) {
+      throwIfAborted(deps.signal);
+      const blob = blobs.get(m.sha256);
+      try {
+        if (!blob || blob.bytes !== m.bytes)
+          throw new SyncError("CORRUPT", `远端这张照片对不上：${m.name}`);
+        await downloadBlob(blob, deps, m.name);
+      } catch (e) {
+        if (!unreadable(e)) throw e;
+        broken = m;
+        cause = e;
+        break;
+      }
+      deps.onProgress?.(`正在下载 ${++done}/${merged.wantedMedia.length}`);
+    }
+    if (!broken) break;
+    const { id, sha256 } = broken;
+    const carriers = snapshots.filter(
+      (r) => r.library.media[id]?.sha256 === sha256,
+    );
+    for (const r of carriers) unread.set(r.deviceId, cause);
+    snapshots = snapshots.filter((r) => !carriers.includes(r));
+    merged = mergeLibraries(store.get(), snapshots, base, now);
   }
+  // 上传会整份换掉本机自己的清单、删掉本成员旧版迁来的那份：它们读不了（比如清过同步状态后）就不能跳过，
+  // 否则没并进来的历史连同它引用的对象会被回收。认不出本机时也照原样报错。
+  if (unread.size) {
+    const { deviceId: self } = await deps.transport.me(deps.signal);
+    for (const [deviceId, cause] of unread)
+      if (!self || deviceId === self || deviceId.startsWith("legacy:"))
+        throw cause;
+  }
+  for (const r of snapshots)
+    seen[r.deviceId] = manifests.get(r.deviceId)!.index.sha256;
   const created: File[] = [];
   const prepared = new Map<string, LocalMedia>();
   const reserved = new Set(
@@ -225,9 +292,15 @@ async function syncFamily(
         (entry) => entry.deviceId === state.deviceId && entry.keyId === keyId,
       )
     : undefined;
-  const ownIndex = own
-    ? parseIndex(openSmall(deps.key, INDEX_LABEL, fromBase64(own.index)))
-    : undefined;
+  // 本机旧清单读不了也不要紧：当作变了，照常发布一份新的。
+  let ownIndex: ReturnType<typeof parseIndex> | undefined;
+  try {
+    ownIndex = own
+      ? parseIndex(openSmall(deps.key, INDEX_LABEL, fromBase64(own.index)))
+      : undefined;
+  } catch (e) {
+    if (!undecodable(e)) throw e;
+  }
   // 上传的就是这一刻的库（下面两次 store.get() 与这里在同一段同步代码里）。
   deps.onSnapshot?.();
   // meta.createdAt 让清单字节每次不同，所以要比实体段而不是整份清单。
@@ -265,13 +338,14 @@ async function syncFamily(
       pulled: merged.pulled,
       pushed: pushed?.pushed ?? 0,
       conflicts: merged.conflicts.length,
+      ...(unread.size ? { unread: unread.size } : {}),
     },
   };
   delete result.lastError;
   writeBase(merged.base);
   writeRemoteState(result);
   // 只收本次处理的清单钉子（含上次中断的同一份）；其他中断钉子按既有七天期限收拾。
-  const completed = new Set(manifests.map((m) => m.index.sha256));
+  const completed = new Set([...manifests.values()].map((m) => m.index.sha256));
   for (const pin of restorePins())
     if (
       pins.some((p) => p.uri === pin.uri) ||

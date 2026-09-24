@@ -33,6 +33,7 @@ vi.mock("../src/sync/family", () => ({ joinFamily: env.join }));
 vi.mock("../src/sync/status", () => ({ markSyncRunning: env.mark, claimSync: () => (env.mark(true), true) }));
 vi.mock("../src/sync/state", () => ({
   loadKey: vi.fn(),
+  unreadNotice: () => "",
   readConflicts: async () => structuredClone(env.items),
   writeConflicts: (items: Conflict[]) => { env.write(items); env.items = items; },
 }));
