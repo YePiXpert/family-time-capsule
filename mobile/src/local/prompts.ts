@@ -180,7 +180,7 @@ function hashOf(value: string): number {
   return h >>> 0;
 }
 
-/** 同一天同一 seed 稳定返回一条；「换一个」换 seed 即可，不落库。 */
+/** 同一天同一 seed 稳定返回一条；「换个问题」换 seed 即可，不落库。 */
 export function promptOf(birthday: string, today: Date, seed = 0): string {
   const band = bandOf(birthday, today);
   const list = PROMPTS[band];

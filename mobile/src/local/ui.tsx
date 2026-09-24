@@ -1034,6 +1034,7 @@ export function SignatureButton({
   disabled = false,
   testID = "editor-by",
   initiallyOpen = false,
+  leading,
 }: {
   value: string | undefined;
   options: readonly string[];
@@ -1042,6 +1043,8 @@ export function SignatureButton({
   testID?: string;
   /** 「我的落款」页一进来就把 chips 铺开。 */
   initiallyOpen?: boolean;
+  /** 给了就与落款排成一行、落款靠右：编辑页纸上页脚左边的「草稿会自动保留」（null 只占位）；chips 照样铺满整行。 */
+  leading?: ReactNode;
 }) {
   const s = useStyles();
   const { colors: c } = useTheme();
@@ -1053,28 +1056,38 @@ export function SignatureButton({
     setCustom(null);
     setOpen(false);
   };
+  const trigger = (
+    <Pressable
+      testID={testID}
+      accessibilityRole="button"
+      accessibilityLabel={value ? `落款：${value}` : "谁写的？"}
+      accessibilityState={{ disabled, expanded: open }}
+      disabled={disabled}
+      hitSlop={6}
+      onPress={() => setOpen(!open)}
+      style={({ pressed }) => ({
+        alignSelf: leading === undefined ? "flex-end" : "center",
+        minHeight: 44,
+        justifyContent: "center",
+        paddingHorizontal: 4,
+        opacity: disabled ? 0.4 : pressed ? 0.7 : 1,
+      })}
+    >
+      <Text style={[s.muted, { color: value ? c.ink : c.muted }]}>
+        {value ? `—— ${value}` : "谁写的？"}
+      </Text>
+    </Pressable>
+  );
   return (
     <View style={{ gap: 8 }}>
-      <Pressable
-        testID={testID}
-        accessibilityRole="button"
-        accessibilityLabel={value ? `落款：${value}` : "谁写的？"}
-        accessibilityState={{ disabled, expanded: open }}
-        disabled={disabled}
-        hitSlop={6}
-        onPress={() => setOpen(!open)}
-        style={({ pressed }) => ({
-          alignSelf: "flex-end",
-          minHeight: 44,
-          justifyContent: "center",
-          paddingHorizontal: 4,
-          opacity: disabled ? 0.4 : pressed ? 0.7 : 1,
-        })}
-      >
-        <Text style={[s.muted, { color: value ? c.ink : c.muted }]}>
-          {value ? `—— ${value}` : "谁写的？"}
-        </Text>
-      </Pressable>
+      {leading === undefined ? (
+        trigger
+      ) : (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <View style={{ flex: 1, minWidth: 0 }}>{leading}</View>
+          {trigger}
+        </View>
+      )}
       {open && (
         <View style={{ gap: 8 }}>
           <View style={s.row}>
