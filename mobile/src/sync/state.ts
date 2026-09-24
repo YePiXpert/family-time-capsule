@@ -244,11 +244,12 @@ export async function readConflicts(): Promise<Conflict[]> {
 export function writeConflicts(items: readonly Conflict[]): void {
   writeJson(conflictsFile(), { version: 1, items });
 }
-/** 退出一起写：状态、基、冲突与同步清单一起删；本机资料一个字节不动。 */
+/**
+ * 退出一起写：状态、基与同步清单一起删；本机资料一个字节不动。
+ * 冲突留底不删：那是没选中的一版唯一的副本，退出、换钥匙加入之后照样可以「用这一版」。
+ */
 export function clearSyncFiles(): void {
-  for (const file of [
-    stateFile(), baseFile(), conflictsFile(), syncManifestFile(),
-  ])
+  for (const file of [stateFile(), baseFile(), syncManifestFile()])
     if (file.exists) file.delete();
   notifySyncFiles();
 }

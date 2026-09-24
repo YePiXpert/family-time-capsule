@@ -270,13 +270,14 @@ it("keeps conflicts with their losing version and skips entries it cannot trust"
   put("conflicts.json", "broken");
   expect(await state.readConflicts()).toEqual([]);
 });
-it("clearSyncFiles removes state, base and conflicts together and is idempotent", async () => {
+it("clearSyncFiles removes state and base, keeps the conflict versions, and is idempotent", async () => {
   const state = await load();
   state.writeRemoteState(state.freshRemoteState(KEY_ID));
   state.writeBase(state.emptyBase());
   state.writeConflicts([]);
   state.clearSyncFiles();
-  expect(fs.readdirSync(syncDir())).toEqual([]);
+  // 没选中的一版只存在这里：退出一起写后还要能「用这一版」。
+  expect(fs.readdirSync(syncDir())).toEqual(["conflicts.json"]);
   state.clearSyncFiles();
   expect(await state.readRemoteState()).toBeNull();
   expect(await state.readBase()).toEqual(state.emptyBase());
