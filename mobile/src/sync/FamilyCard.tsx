@@ -31,6 +31,7 @@ import {
   storeKey,
   writeRemoteState,
   type RemoteState,
+  unreadNotice,
 } from "./state";
 import { SyncError, createTransport, type RemoteStatus } from "./transport";
 /** 备份页最后一张卡：家人一起写的三态入口，进度与结果就地显示。
@@ -179,21 +180,24 @@ export function FamilyCard({
           conflicts > 0 ? `${conflicts} 段两台手机都改过` : "",
         ].filter(Boolean);
         setMessage(
-          pulled === 0 && pushed === 0 && conflicts === 0
-            ? "已经是最新的了。"
-            : `同步完成：${parts.join("，")}。`,
+          [
+            pulled === 0 && pushed === 0 && conflicts === 0
+              ? "已经是最新的了。"
+              : `同步完成：${parts.join("，")}。`,
+            unreadNotice(result.lastSyncSummary),
+          ].join(""),
         );
       }),
     );
   const resume = () =>
     perform((signal) =>
       withKey(signal, async (key) => {
-        await joinFamily(store, key, {
+        const result = await joinFamily(store, key, {
           transport: createTransport(),
           onProgress: setProgress,
           signal,
         });
-        setMessage("已加入，同步完成。");
+        setMessage(`已加入，同步完成。${unreadNotice(result.lastSyncSummary)}`);
       }),
     );
   const verify = () =>
@@ -368,6 +372,9 @@ export function FamilyCard({
               ? `上次同步 ${dateTimeLabel(remote.lastSyncAt)} · ${remote.lastSyncSummary?.devices ?? 1} 台手机 · ${bytesLabel(remote.lastSyncSummary?.bytes ?? 0)}`
               : "还没同步过。"}
           </Text>
+          {!syncing && !!unreadNotice(remote.lastSyncSummary) && (
+            <Text style={s.muted}>{unreadNotice(remote.lastSyncSummary)}</Text>
+          )}
           <ErrorText message={error || (!syncing ? remote.lastError : "") || ""} />
           {conflicts > 0 && (
             <View style={s.between}>

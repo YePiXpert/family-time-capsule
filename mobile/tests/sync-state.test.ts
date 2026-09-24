@@ -303,3 +303,10 @@ it("notifies once after each completed write or clear, and stops after unsubscri
   state.clearSyncFiles();
   expect(notify).toHaveBeenCalledTimes(5);
 });
+it("says how many phones were not read this time, and nothing when all were", async () => {
+  const { unreadNotice } = await load();
+  const summary = { devices: 3, objects: 1, bytes: 1, pulled: 0, pushed: 0, conflicts: 0 };
+  expect(unreadNotice(undefined)).toBe("");
+  expect(unreadNotice(summary)).toBe("");
+  expect(unreadNotice({ ...summary, unread: 2 })).toContain("有 2 台手机的内容这次没读到");
+});

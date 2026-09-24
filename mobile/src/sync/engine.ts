@@ -266,7 +266,15 @@ export async function downloadContent(
       objectIdOf(deps.key, plan.sha256, plan.part),
       deps.signal,
     );
-    const chunks = openObject(deps.key, plan, sealed);
+    let chunks: Uint8Array[];
+    try {
+      chunks = openObject(deps.key, plan, sealed);
+    } catch (e) {
+      throw new SyncError(
+        "CORRUPT",
+        e instanceof Error ? e.message : "远端这一份对不上，可能被改动过。",
+      );
+    }
     const sizes = chunkSizes(plan.bytes);
     if (
       chunks.length !== sizes.length ||
