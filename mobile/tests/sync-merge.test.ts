@@ -939,6 +939,46 @@ describe("root fields and media", () => {
       "起点，续写，再续",
     );
   });
+  it("keeps every concurrent annual note when several phones arrive in one sync", () => {
+    const shared = lib((s) => { s.yearNotes["2026"] = "起点"; });
+    const base = baseOf(shared);
+    const phones = ["爸爸写的", "妈妈写的", "外婆写的"].map((text, i) => {
+      const library = copy(shared);
+      library.yearNotes["2026"] = text;
+      return snap(library, `phone-${i}`, [T1, T2, T3][i]!);
+    });
+    const results = [
+      merge(shared, phones, base),
+      merge(lib(), [...phones].reverse()),
+      ...phones.map((phone) => merge(phone.library, phones.filter((r) => r !== phone), base)),
+    ];
+    for (const result of results) {
+      const note = result.next.yearNotes["2026"];
+      for (const phone of phones) expect(note).toContain(phone.library.yearNotes["2026"]);
+      expect(note).not.toContain("起点");
+      const repeated = merge(result.next, phones, result.base);
+      expect(repeated.next.yearNotes).toEqual(result.next.yearNotes);
+      expect(repeated.pulled).toBe(0);
+    }
+    expect(new Set(results.map((r) => r.next.yearNotes["2026"])).size).toBe(1);
+  });
+  it("converges on one profile value across three phones regardless of snapshot order", () => {
+    const shared = lib((s) => { s.profile.motto = "原来的寄语"; });
+    const base = baseOf(shared);
+    const values = ["爸爸的寄语", "妈妈的寄语", "外婆的寄语"].sort((a, b) => hashOf(b).localeCompare(hashOf(a)));
+    const phones = values.map((motto, i) => {
+      const library = copy(shared);
+      library.profile.motto = motto;
+      return snap(library, `phone-${i}`, [T1, T2, T3][i]!);
+    });
+    for (const phone of phones) {
+      const remotes = phones.filter((r) => r !== phone);
+      const result = merge(phone.library, remotes, base);
+      expect(result.next.profile.motto).toBe(values[0]);
+      expect(merge(result.next, [...remotes].reverse(), result.base).pulled).toBe(0);
+    }
+    expect(merge(shared, phones, base).next.profile.motto).toBe(values[0]);
+  });
   it("adopts year covers and pulls their media, and takes the earlier binding time per year", () => {
     const local = lib((s) => {
       s.yearBooksBoundAt = { "2026": T2 };
@@ -1176,6 +1216,16 @@ describe("yearPicks shared root", () => {
     expect(merge(onA.next, [snap(a)], onA.base).next.yearPicks).toEqual(b.yearPicks);
     b.yearPicks!["2026"]!.updatedAt = T1;
     expect(merge(a, [snap(b)], base).next.yearPicks).toEqual(merge(b, [snap(a)], base).next.yearPicks);
+  });
+  it("chooses the latest directory edit from all devices even when its manifest was published earlier", () => {
+    const start = shared(), base = baseOf(start);
+    const older = copy(start), newer = copy(start);
+    older.yearPicks!["2026"] = directory(T1, "较早的编辑");
+    newer.yearPicks!["2026"] = directory(T2, "最新的编辑");
+    const remotes = [snap(older, "older", T3), snap(newer, "newer", T2)];
+    const result = merge(start, remotes, base);
+    expect(result.next.yearPicks).toEqual(newer.yearPicks);
+    expect(merge(result.next, remotes, result.base).pulled).toBe(0);
   });
   it("repairs deleted records and quotes, removes empty months and years without mutating the input", () => {
     const s = shared();
