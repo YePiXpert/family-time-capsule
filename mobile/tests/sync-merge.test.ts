@@ -1114,6 +1114,42 @@ describe("version ancestry", () => {
   });
 });
 
+describe.each(["records", "letters"] as const)("ancestry without a base: %s", (kind) => {
+    const chain = () => {
+      const put = (s: Library, text: string, at: string, previous?: LocalRecord | LocalLetter) => {
+        const patch = { text, updatedAt: at, ...(previous ? { ancestors: lineage(previous) } : {}) };
+        if (kind === "records") s.records.r = record("r", patch);
+        else s.letters.r = letter("r", patch);
+        return s[kind].r!;
+      };
+      const old = lib(), newer = lib();
+      const v1 = put(old, "第一版", T0);
+      put(newer, "改过的第二版", T2, v1);
+      return { old, newer };
+    };
+    it("a restored or rejoined phone takes the family's descendant version with no card", () => {
+      const { old, newer } = chain();
+      const result = merge(copy(old), [snap(newer)], emptyBase());
+      expect(result.next[kind].r!.text).toBe("改过的第二版");
+      expect(result.conflicts).toEqual([]);
+    });
+    it("a lost phone's ancestor version neither replaces the newer one nor makes a card or fetches its photos", () => {
+      const { old, newer } = chain();
+      if (kind === "records") {
+        old.media.gone = media("gone");
+        old.records.r = { ...old.records.r!, mediaIds: ["gone"] };
+        newer.records.r = { ...newer.records.r!, ancestors: lineage(old.records.r) };
+      }
+      const rejoined = merge(copy(newer), [snap(old)], emptyBase());
+      expect(rejoined.next[kind].r!.text).toBe("改过的第二版");
+      expect(rejoined.conflicts).toEqual([]);
+      expect(rejoined.wantedMedia).toEqual([]);
+      // 带着基（第一次读到那台手机）也一样。
+      const kept = merge(copy(newer), [snap(old)], baseOf(newer));
+      expect(kept.next[kind].r!.text).toBe("改过的第二版");
+      expect(kept.conflicts).toEqual([]);
+    });
+});
 
 describe("yearPicks shared root", () => {
   const directory = (updatedAt = T0, title = "窗边的小脚"): NonNullable<Library["yearPicks"]>[string] => ({ title, months: { "2026-09": { recordIds: ["r"], quote: { recordId: "r", text: "记录" } } }, updatedAt });

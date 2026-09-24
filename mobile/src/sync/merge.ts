@@ -482,6 +482,8 @@ export function mergeLibraries(
       }
       if (fpL === M) {
         // 本机没动：拿远端的——除非远端这一版比本机还旧（恢复了旧备份、或时钟不准），那就留本机、出卡。
+        // 远端这版在本机的世系里（丢了的手机、恢复前的旧清单）：早被本机包含，不出卡。
+        if (descendsFrom(L, C.entity) === true) continue;
         if (isOlder(C.entity, L)) conflict(kind, id, L, C.entity, C.device);
         else {
           // 已发布的本机版也可能输给并发编辑：对方有世系却不源自本机版时，本机也留底。
@@ -497,6 +499,12 @@ export function mergeLibraries(
         if (!isOlder(C.entity, L)) adopt(kind, id, C.entity);
         continue;
       }
+      // 一边的世系里有另一边（恢复了旧备份、重新加入后读到旧手机的清单）：旧的已包含在新的里，直接取新的，不出卡。
+      if (descendsFrom(C.entity, L) === true) {
+        adopt(kind, id, C.entity);
+        continue;
+      }
+      if (descendsFrom(L, C.entity) === true) continue;
       const remoteWins = newest(C, localVersion) < 0;
       const winner = remoteWins ? C : localVersion,
         loser = remoteWins ? localVersion : C;

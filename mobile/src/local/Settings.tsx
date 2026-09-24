@@ -32,6 +32,7 @@ import { FamilyCard } from "../sync/FamilyCard";
 import { isLocalBusy, isSyncRunning, markLocalBusy } from "../sync/status";
 import { conflictMediaIds } from "../sync/conflicts";
 import {
+  forgetMergeHistory,
   readConflicts,
   readRemoteState,
   subscribeSyncFiles,
@@ -705,6 +706,8 @@ export function Backup() {
           onPress: () => {
             void perform(async () => {
               await restoreBackup(store, files, setMessage);
+              // 一起写的手机：下一轮把全家的清单重读一遍，把备份之后家人的改动并回来。
+              await forgetMergeHistory();
               setMessage(done);
             });
           },
