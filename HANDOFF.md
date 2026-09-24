@@ -32,6 +32,7 @@
   - 安卓冒烟：`assert_fits(sheet)` 收拢编辑页那段检查，写信页在正文写完、按返回收起键盘后再查一次（`letterFits`，另截 `letter-editor`）。iOS 回归只查编辑页。
   - 「我的」（主人随后让做）：`Settings.tsx` 五行 `SettingsRow` 收进一个 `SettingsGroup`、去掉三个区标题；色调只用 `accent`（落款、AI）与 `apricot`（备份、存储、外观）；`JournalIcon` 新增 `archive`／`phone`／`appearance`（半圆用 `fill="currentColor"`，Svg 上加了 `color`）；脚注挪到页尾、上面一枚 `Ornament`。`indigo`／`pine` 色调仍留给书架的引导行。预览新增 `settings` 场景（`stubs/settings.tsx` 把备份、归档、同步、AI 客户端换成空壳）。
   - 验证出包 [run 35954036132](https://github.com/YePiXpert/family-time-capsule/actions/runs/35954036132)（`workflow_dispatch`，源码 `9a1d6e9`：写信一张纸与不回弹，「我的」整理在它之后的 `1f66d12`、没进这次出包）七个作业全绿；安卓证据 `editorFits`／`letterFits` 都为真，写信页滚动区 `[0,76][390,739]`、纸 `[20,96][370,719]`（离底栏 20）、`scrollable="false"`，截图 `letter-editor` 正常。
+  - 应用图标（主人看了六个候选 https://claude.ai/artifact/1HhyCdBS8fvGSZFx5dDfnM 后说「就用A3吧」）：`mobile/assets/icon.png`（1024，RGB 无透明，满版赤陶 + 纸色圆章「桉」）、`android-icon-background.png`（同一片赤陶渐变）、`android-icon-foreground.png`（透明底，章缩到 2/3 落在自适应图标安全区）、`android-icon-monochrome.png`（白色、内圈实线）、`favicon.png`、`splash-icon.png`（没被 app.json 引用，只是换掉旧胶囊）。`app.json` 的 `adaptiveIcon` 改 `backgroundColor: #B2543B` 并加 `backgroundImage`。原生工程由 CI 的 `expo prebuild --clean` 从这些文件生成，仓库里没有 mipmap／AppIcon。源稿与渲染脚本在本机 `/var/tmp/anan-icons`（`final.html`／`final.mjs`，Noto Serif SC 来自 `@fontsource/noto-serif-sc`，OFL）。
   - react-native-web 预览（`entry.tsx` 新增 `letter`／`letter-full` 场景）对过：390 宽空信与写满、深色、320 宽更大文字（信长，可滑）、录音中、键盘；空信往下滚 2000 与不滚逐字节相同，编辑页同。
 
 - **1.0.6 发版（2026-09-24，构建号 79）**：修 1.0.5 出包截图里安卓编辑页还能滑的问题（CHANGELOG「1.0.6」）。
