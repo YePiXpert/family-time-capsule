@@ -1,5 +1,5 @@
 import { SERVICE_URL } from "../local/brand";
-import { getToken } from "../ai/session";
+import { getToken } from "../family/session";
 /**
  * 远端备份唯一的联网文件（宪法白名单里的第二个）。用 XMLHttpRequest 而不是 fetch：
  * RN 的 XHR 原生支持二进制请求体与 arraybuffer 响应，fetch().arrayBuffer() 在 RN 上并不稳。
@@ -98,7 +98,7 @@ export type RemoteDeviceManifest = {
 };
 export type Transport = {
   /** 当前登录的本机设备；不按成员回退到其他手机。 */
-  me(signal?: AbortSignal): Promise<{ deviceId: string | null; role?: "owner" | "member" }>;
+  me(signal?: AbortSignal): Promise<{ deviceId: string | null; role?: "admin" | "member" }>;
   status(signal?: AbortSignal): Promise<RemoteStatus>;
   /** 返回远端还没有的 id。 */
   missing(ids: readonly string[], signal?: AbortSignal): Promise<Set<string>>;
@@ -126,7 +126,7 @@ export type Transport = {
   wipe(signal?: AbortSignal): Promise<void>;
   /** 全家每台手机的清单，按发布时间新→旧。 */
   manifests(signal?: AbortSignal): Promise<RemoteDeviceManifest[]>;
-  /** 退出一起写：删掉一台设备的清单。自己的设备谁都能删，别人的只有主人能删。 */
+  /** 退出一起写：删掉一台设备的清单。自己的设备谁都能删，别人的只有管理者能删。 */
   deleteManifest(
     deviceId: string,
     signal?: AbortSignal,
@@ -269,7 +269,7 @@ export function createTransport(
           : null;
       return {
         deviceId: isText(deviceId) ? deviceId : null,
-        ...(role === "owner" || role === "member" ? { role } : {}),
+        ...(role === "admin" || role === "member" ? { role } : {}),
       };
     },
     async status(signal) {

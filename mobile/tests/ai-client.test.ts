@@ -8,10 +8,7 @@ import {
   AIError,
   upload,
   api,
-  changePassword,
   getToken,
-  login,
-  serviceStatus,
  hasConsent, giveConsent } from "../src/ai/client";
 
 /** 内存版钥匙串：fails 里的键写入即失败，模拟系统钥匙串暂时不可写。 */
@@ -111,54 +108,20 @@ describe("api response parsing and error mapping", () => {
   });
   it("preserves code and message from a JSON error body", async () => {
     respondWith(
-      JSON.stringify({ code: "BAD_INPUT", message: "用户名或密码不正确。" }),
+      JSON.stringify({ code: "BAD_INPUT", message: "请先写几句再让 AI 追问。" }),
       { status: 400 },
     );
-    const e = await failure(() =>
-      api("/login", { username: "妈妈", password: "password" }),
-    );
+    const e = await failure(() => api("/ai/write", { writingMode: "ask" }));
     expect(e.code).toBe("BAD_INPUT");
-    expect(e.message).toBe("用户名或密码不正确。");
+    expect(e.message).toBe("请先写几句再让 AI 追问。");
   });
   it("passes valid JSON through and treats an empty body as an empty object", async () => {
     respondWith(JSON.stringify({ initialized: true }));
-    await expect(serviceStatus()).resolves.toEqual({ initialized: true });
+    await expect(api("/status")).resolves.toEqual({ initialized: true });
     respondWith("");
     await expect(api("/status")).resolves.toEqual({});
   });
 });
-describe("login only stores a usable device token", () => {
-  it("rejects a too-short token without writing anything to the keychain", async () => {
-    respondWith(JSON.stringify({ token: "short" }));
-    const e = await failure(() => login("妈妈", "password123", "我的手机"));
-    expect(e.code).toBe("INVALID_RESULT");
-    expect(secure.store.has(AI_SESSION_KEY)).toBe(false);
-    expect(secure.store.has(LEGACY_AI_SESSION_KEY)).toBe(false);
-  });
-  it("stores a valid token under the new session key", async () => {
-    const token = "t".repeat(40);
-    respondWith(JSON.stringify({ token }));
-    await login("妈妈", "password123", "我的手机");
-    expect(secure.store.get(AI_SESSION_KEY)).toBe(token);
-  });
-});
-describe("changePassword sends the current password verbatim", () => {
-  it("keeps surrounding whitespace on the current password", async () => {
-    respondWith("{}");
-    await changePassword("  secret  ", "new-password");
-    expect(calls[0]!.method).toBe("PUT");
-    expect(JSON.parse(calls[0]!.body!)).toEqual({
-      current: "  secret  ",
-      next: "new-password",
-    });
-  });
-  it("omits the field entirely for an empty current password", async () => {
-    respondWith("{}");
-    await changePassword("", "new-password");
-    expect(JSON.parse(calls[0]!.body!)).toEqual({ next: "new-password" });
-  });
-});
-
 class FakeXHR {
   static last: FakeXHR;
   method = "";

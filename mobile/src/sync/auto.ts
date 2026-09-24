@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { AppState } from "react-native";
-import { getToken } from "../ai/session";
+import { getToken } from "../family/session";
 import { messageOf } from "../local/errors";
 import type { Library } from "../local/model";
 import type { LocalStore } from "../local/store";

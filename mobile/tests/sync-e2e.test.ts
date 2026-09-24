@@ -7,7 +7,6 @@ import {
   it,
   vi,
 } from "vitest";
-import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -16,6 +15,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { createTransport, type HttpClient } from "../src/sync/transport";
 import { keyIdOf } from "../src/sync/crypto";
 import { twoPhonesWriteTogether } from "./helpers/family-two-phones";
+import { startServer, type E2EServer } from "./helpers/e2e-server";
 /**
  * 真端到端：拉起仓库里的真实服务端子进程（SQLite 临时库、对象库临时目录），
  * 手机端引擎经 Node fetch 版 HttpClient 跑「开启 → 上传 → 核对 → 换手机加入」。
@@ -60,8 +60,6 @@ vi.mock("expo-secure-store", () => ({
   setItemAsync: async () => {},
   deleteItemAsync: async () => {},
 }));
-const serverDir = path.resolve(__dirname, "..", "..", "server");
-let child: ChildProcess | null = null;
 let serverRoot = "";
 let base = "";
 let token = "";
@@ -97,69 +95,18 @@ const nodeHttp: HttpClient = async (request) => {
     body: new Uint8Array(await response.arrayBuffer()),
   };
 };
+let server: E2EServer;
 beforeAll(async () => {
-  if (!fs.existsSync(path.join(serverDir, "node_modules")))
-    throw new Error(
-      "server/node_modules 不在：先在 server/ 里 npm ci，再跑端到端。",
-    );
-  serverRoot = fs.mkdtempSync(path.join(os.tmpdir(), "anan-e2e-server-"));
-  fs.writeFileSync(path.join(serverRoot, "cpa-key"), "unused-in-e2e\n");
-  const port = 20000 + Math.floor(Math.random() * 20000);
-  base = `http://127.0.0.1:${port}/api/v1`;
-  const clean = { ...process.env };
-  for (const name of Object.keys(clean))
-    if (/^(https?|all)_proxy$/i.test(name)) delete clean[name];
-  const logs: string[] = [];
-  child = spawn(process.execPath, ["src/index.ts"], {
-    cwd: serverDir,
-    env: {
-      ...clean,
-      DB_FILE: path.join(serverRoot, "ai.sqlite"),
-      BACKUP_DIR: path.join(serverRoot, "backup"),
-      AI_PROVIDER: "mimo",
-      AI_MODEL: "mimo-v2.6-pro",
-      AI_BASE_URL: "https://api.xiaomimimo.com/v1",
-      AI_KEY_FILE: path.join(serverRoot, "cpa-key"),
-      AI_ACCESS: "payg-approved", // Fake key; this sync-only fixture never calls AI.
-      TRANSCRIBE_PROVIDER: "mimo",
-      TRANSCRIBE_MODEL: "mimo-v2.5-asr",
-      TRANSCRIBE_BASE_URL: "https://api.xiaomimimo.com/v1",
-      TRANSCRIBE_KEY_FILE: path.join(serverRoot, "cpa-key"),
-      TRANSCRIBE_ACCESS: "payg-approved",
-      PORT: String(port),
-      SOURCE_SHA: "e2e",
-      NODE_NO_WARNINGS: "1",
-    },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  child.stdout?.on("data", (d: Buffer) => logs.push(d.toString()));
-  child.stderr?.on("data", (d: Buffer) => logs.push(d.toString()));
-  const deadline = Date.now() + 30000;
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null)
-      throw new Error(`服务端子进程退出了：\n${logs.join("")}`);
-    try {
-      const health = await fetch(`${base.replace(/\/api\/v1$/, "")}/healthz`);
-      if (health.ok) break;
-    } catch {
-      // 还没起来
-    }
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  }
-  // 空服务开家庭：部署端的一次性激活码（与服务端同一个库），第一位管理者。钥匙包与恢复包在这里是合成的：
-  // 服务端只管状态机、不解包；手机端的真封包在 family-pairing 的测试里验。
-  const printed = execFileSync(process.execPath, ["src/manage.ts", "activation"], {
-    cwd: serverDir,
-    env: { ...clean, DB_FILE: path.join(serverRoot, "ai.sqlite"), NODE_NO_WARNINGS: "1" },
-    encoding: "utf8",
-  });
-  const code = /[0-9A-Z]{5}(?:-[0-9A-Z]{5}){4}/.exec(printed)?.[0];
-  if (!code) throw new Error(`没拿到激活码：${printed}`);
+  server = await startServer();
+  base = server.base;
+  serverRoot = server.root;
+  // 空服务开家庭：部署端的一次性激活码，第一位管理者。钥匙包与恢复包在这里是合成的：
+  // 服务端只管状态机、不解包；手机端的真封包在 family-e2e 里验。
   const setup = await fetch(`${base}/family/activate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      activationCode: code,
+      activationCode: server.activationCode(),
       memberId: randomUUID(),
       memberName: "爸爸",
       deviceName: "vitest",
@@ -174,21 +121,12 @@ beforeAll(async () => {
   });
   if (setup.status !== 201)
     throw new Error(
-      `开家庭失败：${setup.status} ${await setup.text()}\n${logs.join("")}`,
+      `开家庭失败：${setup.status} ${await setup.text()}\n${server.logs.join("")}`,
     );
   token = ((await setup.json()) as { token: string }).token;
 }, 60000);
 afterAll(async () => {
-  if (child && child.exitCode === null) {
-    const exited = new Promise((resolve) => child?.once("exit", resolve));
-    child.kill("SIGTERM");
-    await Promise.race([
-      exited,
-      new Promise((resolve) => setTimeout(resolve, 5000)),
-    ]);
-    if (child.exitCode === null) child.kill("SIGKILL");
-  }
-  if (serverRoot) fs.rmSync(serverRoot, { recursive: true, force: true });
+  await server?.stop();
 });
 beforeEach(() => {
   vi.resetModules();

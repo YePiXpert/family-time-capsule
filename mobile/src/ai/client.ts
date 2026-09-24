@@ -1,13 +1,8 @@
 import { SERVICE_URL } from "../local/brand";
-import { getToken, saveToken } from "./session";
+import { getToken } from "../family/session";
 import { AIError } from "./error";
-export {
-  disconnect,
-  getToken,
-  giveConsent,
-  hasConsent,
-  saveToken,
-} from "./session";
+export { getToken } from "../family/session";
+export { giveConsent, hasConsent } from "./session";
 const BASE = SERVICE_URL;
 export { AIError } from "./error";
 export async function api<T>(
@@ -64,33 +59,6 @@ export async function api<T>(
     signal?.removeEventListener("abort", cancel);
   }
 }
-export const serviceStatus = () => api<{ initialized: boolean }>("/status");
-async function signIn(path: string, body: Record<string, string>) {
-  const result = await api<{ token: string }>(path, body);
-  if (typeof result.token !== "string" || result.token.length < 32)
-    throw new AIError("INVALID_RESULT", "设备凭证无效。");
-  await saveToken(result.token);
-}
-/** 空库上第一次初始化：这台设备直接成为主人，只允许一次。 */
-export const setupService = (
-  username: string,
-  password: string,
-  deviceName: string,
-) =>
-  signIn("/setup", {
-    username: username.trim(),
-    password,
-    deviceName: deviceName.trim(),
-  });
-export const login = (username: string, password: string, deviceName: string) =>
-  signIn("/login", {
-    username: username.trim(),
-    password,
-    deviceName: deviceName.trim(),
-  });
-export const changePassword = (current: string, next: string) =>
-  api("/password", { current: current || undefined, next }, "PUT");
-
 /** 二进制录音只在这里上传；RN 原生 XHR 可直接发送 Uint8Array。 */
 export async function upload<T>(
   path: string,

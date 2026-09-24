@@ -296,7 +296,7 @@ it("omits unknown manifest references but preserves an explicitly empty list", a
 });
 
 it("A-16 me 只接受已知角色，主人入口不能由未知角色开启", async () => {
-  for (const role of ["owner", "member"] as const) {
+  for (const role of ["admin", "member"] as const) {
     answer = () => ({ status: 200, body: encode({ member: { deviceId: "B", role } }) });
     expect(await transport().me()).toEqual({ deviceId: "B", role });
   }

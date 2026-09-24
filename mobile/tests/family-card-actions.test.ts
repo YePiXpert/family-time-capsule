@@ -23,7 +23,7 @@ vi.mock("react", () => ({
 vi.mock("react-native", () => ({ View: "View", Alert: { alert: (title: string, message: string, buttons: never[]) => env.alerts.push({ title, message, buttons }) } }));
 vi.mock("@react-navigation/native", () => ({ useFocusEffect: vi.fn() }));
 vi.mock("expo-local-authentication", () => ({}));
-vi.mock("../src/ai/session", () => ({ getToken: vi.fn() }));
+vi.mock("../src/family/session", () => ({ getToken: vi.fn() }));
 vi.mock("../src/local/backup", () => ({ BackupStopped: class extends Error {} }));
 vi.mock("../src/local/context", () => ({ useLibrary: () => ({ settings: {} }), useStore: () => ({}), useSyncStatus: () => ({ running: env.running }) }));
 vi.mock("../src/local/navigation", () => ({ useNav: () => ({}) }));
