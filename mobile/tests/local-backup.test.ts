@@ -201,6 +201,23 @@ it("exports and restores real original bytes and relationships with a before-res
   ).toEqual(Buffer.alloc(600000, 17));
   expect((await backup.inspectBackup(before)).profile.name).toBe("changed");
 });
+it("a restore drops the deletion markers made since the backup and the files it replaced", async () => {
+  const { store, backup, files, model, media } = await setup();
+  const out = await backup.createBackup(store.get());
+  const oldFile = files.mediaFile(media).uri;
+  await store.change((s) => {
+    model.deleteRecord(s, "r");
+  });
+  expect(store.get().tombstones?.["records:r"]).toBeTruthy();
+  await backup.restoreBackup(store, out);
+  expect(store.get().records.r?.text).toBe("第一步");
+  // 留着恢复前的墓碑，下次家人同步会把刚恢复的记录再删掉。
+  expect(store.get().tombstones?.["records:r"]).toBeUndefined();
+  const restored = store.get().media[media.id]!;
+  expect(files.mediaFile(restored).uri).not.toBe(oldFile);
+  expect(fs.existsSync(oldFile)).toBe(false);
+  expect(fs.readFileSync(files.mediaFile(restored).uri)).toEqual(Buffer.alloc(600000, 17));
+});
 it("rejects an altered, lost or truncated backup before changing current data", async () => {
   const { store, backup, files, media } = await setup();
   const out = await backup.createBackup(store.get());
