@@ -30,7 +30,7 @@ export type Routes = {
   Letter: { id: string };
   Quotes: undefined;
   Conflicts: undefined;
-  RecoveryCode: { mode: "show" | "join" };
+  Family: undefined;
 };
 export type Props<T extends keyof Routes> = NativeStackScreenProps<Routes, T>;
 export const useNav = () => useNavigation<NativeStackNavigationProp<Routes>>();

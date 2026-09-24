@@ -6,7 +6,7 @@ import * as LocalAuthentication from "expo-local-authentication";
 import { File } from "expo-file-system";
 import { useLibrary, useStore, useSyncStatus } from "./context";
 import { useNav } from "./navigation";
-import { getToken } from "../ai/client";
+import { getToken } from "../family/session";
 import { ageLine, birthdayLabel, dateTimeLabel, toDayKey } from "./dates";
 import { preserveMedia } from "./files";
 import {
@@ -80,13 +80,13 @@ export function Settings() {
   const [aiState, setAiState] = useState<string | undefined>(undefined);
   useEffect(() => {
     let live = true;
-    // 只看本机有没有登录令牌，不联网：离线打开「我的」也不该转圈或报错。
+    // 只看本机有没有家庭令牌，不联网：离线打开「我的」也不该转圈或报错。
     getToken()
       .then((token) => {
-        if (live) setAiState(token ? "已登录" : "未登录");
+        if (live) setAiState(token ? "已加入家庭" : "还没加入家庭");
       })
       .catch(() => {
-        if (live) setAiState("未登录");
+        if (live) setAiState("还没加入家庭");
       });
     return () => {
       live = false;
@@ -196,10 +196,17 @@ export function Settings() {
           onPress={() => nav.navigate("Storage")}
         />
         <SettingsRow
+          icon="person"
+          tone="pine"
+          label="家庭与设备"
+          subtitle={aiState}
+          testID="settings-family"
+          onPress={() => nav.navigate("Family")}
+        />
+        <SettingsRow
           icon="sparkle"
           tone="accent"
           label="AI 设置"
-          subtitle={aiState}
           onPress={() => nav.navigate("AISettings")}
         />
         <SettingsRow

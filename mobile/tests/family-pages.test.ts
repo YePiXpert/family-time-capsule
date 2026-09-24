@@ -1,15 +1,13 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import type { Props } from "../src/local/navigation";
 import type { Conflict } from "../src/sync/state";
 import { emptyLibrary } from "../src/local/model";
 import { Conflicts } from "../src/sync/Conflicts";
-import { RecoveryCode } from "../src/sync/RecoveryCode";
 
 const env = vi.hoisted(() => ({
   slots: [] as unknown[], cursor: 0,
   focus: undefined as (() => (() => void) | void) | undefined,
   items: [] as Conflict[],
-  join: vi.fn(), mark: vi.fn(), change: vi.fn(), write: vi.fn(), back: vi.fn(),
+  change: vi.fn(), write: vi.fn(),
 }));
 vi.mock("react", () => ({
   useState: (initial: unknown) => {
@@ -28,16 +26,10 @@ vi.mock("../src/local/ui", () => ({
   Button: "Button", Card: "Card", ErrorText: "ErrorText", Field: "Field", Page: "Page", Text: "Text",
   messageOf: (e: Error) => e.message, useStyles: () => ({}), useTheme: () => ({ colors: {} }),
 }));
-vi.mock("../src/sync/crypto", () => ({ keyFromMnemonic: () => new Uint8Array(32), mnemonicOf: vi.fn() }));
-vi.mock("../src/sync/family", () => ({ joinFamily: env.join }));
-vi.mock("../src/sync/status", () => ({ markSyncRunning: env.mark, claimSync: () => (env.mark(true), true) }));
 vi.mock("../src/sync/state", () => ({
-  loadKey: vi.fn(),
-  unreadNotice: () => "",
   readConflicts: async () => structuredClone(env.items),
   writeConflicts: (items: Conflict[]) => { env.write(items); env.items = items; },
 }));
-vi.mock("../src/sync/transport", () => ({ SyncError: class extends Error {}, createTransport: () => ({}) }));
 
 type Element = { type?: unknown; props?: { testID?: string; children?: unknown; title?: string; message?: string; onPress?: () => void; onChangeText?: (text: string) => void } };
 function nodes(node: unknown): Element[] {
@@ -55,10 +47,6 @@ function text(tree: unknown): string {
   return tree && typeof tree === "object" ? text((tree as Element).props?.children) : "";
 }
 function renderConflicts() { env.cursor = 0; return Conflicts(); }
-function renderJoin() {
-  env.cursor = 0;
-  return RecoveryCode({ route: { params: { mode: "join" } }, navigation: { goBack: env.back } } as unknown as Props<"RecoveryCode">);
-}
 const at = "2026-09-20T10:00:00.000Z";
 function conflict(id = "r", time = at): Conflict {
   return {
@@ -75,30 +63,6 @@ async function focusedConflicts() {
 beforeEach(() => {
   vi.clearAllMocks();
   env.slots = []; env.cursor = 0; env.items = []; env.focus = undefined;
-});
-it("加入成功隐藏输入与加入动作，播报手机数并让「好」返回", async () => {
-  env.join.mockResolvedValueOnce({ lastSyncSummary: { devices: 3 } });
-  find(renderJoin(), "recovery-input")!.props!.onChangeText!("twelve words");
-  find(renderJoin(), "recovery-start")!.props!.onPress!();
-  await vi.waitFor(() => expect(env.mark).toHaveBeenLastCalledWith(false));
-  const tree = renderJoin();
-  expect(find(tree, "recovery-input")).toBeUndefined();
-  expect(find(tree, "recovery-start")).toBeUndefined();
-  expect(text(tree)).toContain("已加入，3 台手机在一起写。");
-  expect(find(tree, "recovery-done")!.props!.title).toBe("好");
-  find(tree, "recovery-done")!.props!.onPress!();
-  expect(env.back).toHaveBeenCalledOnce();
-  expect(env.mark.mock.calls).toEqual([[true], [false]]);
-});
-it("加入失败仍可输入重试，错误留在页内，运行标志归零", async () => {
-  env.join.mockRejectedValueOnce(new Error("连不上"));
-  find(renderJoin(), "recovery-input")!.props!.onChangeText!("twelve words");
-  find(renderJoin(), "recovery-start")!.props!.onPress!();
-  await vi.waitFor(() => expect(env.mark).toHaveBeenLastCalledWith(false));
-  const tree = renderJoin();
-  expect(find(tree, "recovery-input")).toBeDefined();
-  expect(find(tree, "recovery-done")).toBeUndefined();
-  expect(nodes(tree).find((el) => el.type === "ErrorText")!.props!.message).toBe("连不上");
 });
 it("冲突倒序显示全文、删除赢家与本机来源，无标题时不拿正文充数", async () => {
   env.items = [conflict("old"), conflict("new", "2026-09-21T10:00:00.000Z")];

@@ -161,6 +161,24 @@ it("二维码里的公钥和服务端对不上就停；不是配对码的解析�
     const third = await requestToJoin(phone(other.base), "第三台");
     expect(["ADMIN_ONLY", "FORBIDDEN"]).toContain(await code(inspectJoin(kid, third.qr)));
 
+    // 钥匙串写不进去：不确认；过一会儿再领一次（断网重连同理），这回存住了才确认。
+    const aunt = phone(other.base);
+    const auntJoin = await requestToJoin(aunt, "姑姑的手机");
+    await approveJoin(admin, await inspectJoin(admin, auntJoin.qr), { kind: "new", name: "姑姑", role: "member" });
+    const saveToken = aunt.vault.saveToken;
+    aunt.vault.saveToken = async () => {
+      throw new Error("钥匙串写失败");
+    };
+    await expect(pollJoin(aunt, auntJoin)).rejects.toThrow("钥匙串写失败");
+    const beforeConfirm = (await admin.api.overview()).devices.find((row) => row.name === "姑姑的手机");
+    expect(beforeConfirm?.pending).toBe(1);
+    aunt.vault.saveToken = saveToken;
+    expect((await pollJoin(aunt, auntJoin))?.member.name).toBe("姑姑");
+    const afterConfirm = (await admin.api.overview()).devices.find((row) => row.name === "姑姑的手机");
+    expect(afterConfirm?.pending).toBe(0);
+    // 确认过了就不能再领。
+    expect(await code(pollJoin(aunt, auntJoin))).not.toBe("no error");
+
     // 同一位家人再加一台手机：选「已有家人」。
     const kid2 = phone(other.base);
     const kid2Join = await requestToJoin(kid2, "桉桉的新平板");

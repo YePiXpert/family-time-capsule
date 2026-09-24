@@ -2,7 +2,7 @@ import { Conflicts } from "../sync/Conflicts";
 import { useSyncStatusValue } from "../sync/status";
 import { useAutoSync } from "../sync/auto";
 import { AISettingsScreen } from "../ai/Settings";
-import { RecoveryCode } from "../sync/RecoveryCode";
+import { FamilyScreen } from "../family/FamilyScreen";
 import {
   Component,
   useCallback,
@@ -331,7 +331,7 @@ function Root() {
           <Stack.Screen name="Letter" component={LetterScreen} />
           <Stack.Screen name="Quotes" component={Quotes} />
           <Stack.Screen name="Conflicts" component={Conflicts} />
-          <Stack.Screen name="RecoveryCode" component={RecoveryCode} />
+          <Stack.Screen name="Family" component={FamilyScreen} />
         </Stack.Navigator>
       </NavigationContainer>
       </View>
