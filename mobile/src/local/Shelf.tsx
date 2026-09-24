@@ -1,5 +1,6 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
+  AppState,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -62,6 +63,7 @@ import {
   milestoneLabel,
   milestoneNumeral,
   milestoneOf,
+  toDayKey,
 } from "./dates";
 import {
   Button,
@@ -851,6 +853,24 @@ export function Volume({
  * 底行与悬浮钮同高，「新建相册」「写一封信」排在它左边，悬浮钮底下从不压着东西。
  * 只有真放不下（更大文字、小屏、提醒卡与草稿同时在）时才退回可以往下滑。
  */
+/** 今天的本地日期：回到前台或过了午夜就换，「N 年前的今天」、信的状态与提醒才跟得上。 */
+function useDayKey(): string {
+  const [day, setDay] = useState(() => toDayKey(new Date()));
+  useEffect(() => {
+    const check = () => setDay(toDayKey(new Date()));
+    const sub = AppState.addEventListener("change", (status) => {
+      if (status === "active") check();
+    });
+    const now = new Date();
+    const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const timer = setTimeout(check, next.getTime() - now.getTime() + 1000);
+    return () => {
+      sub.remove();
+      clearTimeout(timer);
+    };
+  }, [day]);
+  return day;
+}
 export function Shelf() {
   const sync = useSyncStatus();
   const state = useLibrary(),
@@ -875,11 +895,13 @@ export function Shelf() {
     () => sortedRecords({ records: recordMap }),
     [recordMap],
   );
-  // 下面几项都是对已排序数组的一趟线性遍历，交给 React Compiler 自动记忆即可。
+  // 下面几项都是对已排序数组的一趟线性遍历，每次渲染重算。
   const months = [...new Set(records.map((r) => monthKey(r.date)))];
   const years = [...new Set(records.map((r) => yearKey(r.date)))];
   const firsts = records.filter((r) => r.first).length;
   const quotes = records.filter((r) => r.quote).length;
+  // 换日时 day 变化触发重渲染，today 随之更新。
+  const day = useDayKey();
   const today = new Date();
   const albums = useMemo(
     () =>
@@ -897,8 +919,8 @@ export function Shelf() {
     [draftMap],
   );
   const letters = useMemo(
-    () => sortLetters(Object.values(letterMap), new Date()),
-    [letterMap],
+    () => sortLetters(Object.values(letterMap), new Date(`${day}T00:00:00`)),
+    [letterMap, day],
   );
   const hero = heroItems(records, today);
   const tiles = shelfTiles({
@@ -1089,7 +1111,17 @@ export function Shelf() {
         <View style={s.between}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="翻开扉页"
+            // 读屏要先听到名字与年龄，再知道点了是翻开扉页。
+            accessibilityLabel={[
+              state.profile.name
+                ? `${state.profile.name}的成长记`
+                : "成长中的每一天",
+              age ||
+                (records.length
+                  ? `${records.length} 段时光`
+                  : "从今天的一件小事开始"),
+            ].join("，")}
+            accessibilityHint="翻开扉页"
             onPress={() => nav.navigate("Title")}
             style={{ flex: 1, minWidth: 0, gap: 2 }}
           >

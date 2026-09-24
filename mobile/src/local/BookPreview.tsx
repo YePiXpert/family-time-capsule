@@ -5,7 +5,13 @@
  * 真正的成品分辨率在 BookBinder 那边。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Modal, PixelRatio, View, useWindowDimensions } from "react-native";
+import {
+  Modal,
+  PixelRatio,
+  ScrollView,
+  View,
+  useWindowDimensions,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { File } from "expo-file-system";
 import { BookPageCard } from "./BookPage";
@@ -127,7 +133,16 @@ export function BookPreview({
         }}
       >
         <Page top={false} scroll={false} title="翻一遍再装订" onBack={onClose}>
-          <View style={{ flex: 1, padding: 20, paddingTop: 4, gap: 16 }}>
+          {/* 整宽的方页加翻页钮与装订卡，在 360×640 的安卓或大字号下超过一屏：可以滑，装订钮才够得着。 */}
+          <ScrollView
+            alwaysBounceVertical={false}
+            contentContainerStyle={{
+              padding: 20,
+              paddingTop: 4,
+              paddingBottom: 20 + insets.bottom,
+              gap: 16,
+            }}
+          >
             <Text style={s.muted}>
               共 {layout.pages.length} 页 · 20×20cm 方形开本 · 300 DPI 可送印
             </Text>
@@ -177,7 +192,7 @@ export function BookPreview({
                 onPress={onBind}
               />
             </Card>
-          </View>
+          </ScrollView>
         </Page>
       </View>
     </Modal>
