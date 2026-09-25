@@ -45,3 +45,6 @@ yarn-error.*
 
 # test artifacts
 test-results/
+
+# 冒烟与原生回归脚本的输出（CI 与本机）
+/build/
