@@ -41,8 +41,14 @@ import {
   isGlassEffectAPIAvailable,
   isLiquidGlassAvailable,
 } from "expo-glass-effect";
+import {
+  Gesture,
+  GestureDetector,
+  GestureHandlerRootView,
+} from "react-native-gesture-handler";
 import Animated, {
   Easing,
+  cancelAnimation,
   ReduceMotion,
   ReducedMotionConfig,
   useAnimatedStyle,
@@ -137,8 +143,13 @@ export const serif = Platform.select({ ios: "Georgia", android: "serif" });
  * 页面转场用平台默认，时长不可配也不在这里配；减少动态时这里的动画全部不播。
  */
 export const MOTION = {
-  /** 纸面卡片（书册封面、纸面记一刻）按下缩到多少；玻璃按压交给系统 isInteractive。 */
-  pressScale: 0.97,
+  /** 纸面卡片（书册封面、纸面记一刻）按下缩到多少。 */
+  pressScale: 0.95,
+  /** 玻璃圆钮（记一刻）按下缩到多少，叠在系统 isInteractive 的微光上：只靠微光太不明显（主人 1.1.3 真机）。 */
+  glassPressScale: 0.93,
+  /** 面板下拉超过自身高度的这一比例、或松手时向下速度超过 dragVelocity（点／秒）就收起，否则弹回。 */
+  dragClose: 0.25,
+  dragVelocity: 800,
   /** 按压回位的轻弹簧，阻尼比约 0.6：几乎不过冲。 */
   pressSpring: { damping: 22, stiffness: 320 },
   /** 自绘底部面板打开、收起（毫秒）；收放可被反向打断。 */
@@ -234,11 +245,10 @@ export function LocalTheme({ children }: { children: ReactNode }) {
 }
 export const useTheme = () => useContext(ThemeContext);
 /**
- * 纸面卡片的按压：按下轻缩到 MOTION.pressScale、松手弹回，点击本身不等回弹。
- * 只给纸面用：玻璃有系统的按压反馈，再缩就叠成两层。减少动态时不缩。
+ * 按压：按下缩到 `pressed`（默认纸面的 MOTION.pressScale）、松手弹回，点击本身不等回弹。减少动态时不缩。
  * `style` 放在 Animated.View 上（缩放不是透明度，玻璃祖先可以用）。
  */
-export function usePressScale() {
+export function usePressScale(pressed: number = MOTION.pressScale) {
   const { reduceMotion } = useTheme();
   const scale = useSharedValue(1);
   const style = useAnimatedStyle(() => ({
@@ -251,7 +261,7 @@ export function usePressScale() {
   };
   return {
     style,
-    onPressIn: () => to(MOTION.pressScale),
+    onPressIn: () => to(pressed),
     onPressOut: () => to(1),
   };
 }
@@ -1377,7 +1387,9 @@ export function PrivacyCover() {
  * 底部面板（AI）：受控的 RN Modal。蒙层淡入、面板从下沿推上来，两者跟着同一个进度走；
  * 收起途中再打开就从当前位置折回，收完才卸下 Modal。锁上时立即收起（Modal 画在锁之上），
  * 减少动态时直接出现、直接消失。关掉之后读屏焦点回到打开它的按钮。
- * 只管呈现：开没开由调用方决定，收起面板不取消面板里的任务。
+ * 顶上的小横条和 `header` 一起是拖拽区：往下拉，面板和蒙层跟着手走，拉够了或甩下去就收起，
+ * 不够就弹回。下面的 `children` 自己滚动，不接这个手势，免得和滚动抢。
+ * 只管呈现：开没开由调用方决定，收起面板（点蒙层、按钮、下拉、读屏擦除手势）不取消面板里的任务。
  */
 export function SheetModal({
   visible,
@@ -1385,6 +1397,7 @@ export function SheetModal({
   closeLabel,
   closeTestID,
   returnFocus,
+  header,
   children,
 }: {
   visible: boolean;
@@ -1394,6 +1407,8 @@ export function SheetModal({
   closeTestID?: string;
   /** 打开面板的那个按钮：面板收完，读屏焦点回到它。 */
   returnFocus?: RefObject<View | null>;
+  /** 面板标题行：和小横条一起可以按住往下拉。 */
+  header?: ReactNode;
   children: ReactNode;
 }) {
   const { colors, reduceMotion } = useTheme();
@@ -1445,6 +1460,39 @@ export function SheetModal({
     if (Platform.OS !== "ios" && wasMounted.current && !mounted) focusBack();
     wasMounted.current = mounted;
   });
+  // 下拉：进度跟着手指走（蒙层也随之变淡），松手按距离或速度决定收起还是弹回。
+  // 手势真正认定是拖拽（纵向移动 8 以上）才接管进度：只是点一下「收起」不会把正在打开的面板停在半路。
+  const dragFrom = useSharedValue(1);
+  const drag = Gesture.Pan()
+    .activeOffsetY(8)
+    .failOffsetX([-24, 24])
+    .onStart(() => {
+      cancelAnimation(progress);
+      dragFrom.value = progress.value;
+    })
+    .onUpdate((e) => {
+      const h = Math.max(panelHeight.value, 1);
+      // eslint-disable-next-line react-hooks/immutability -- reanimated 共享值的就地修改是其既定用法
+      progress.value = Math.min(
+        1,
+        Math.max(0, dragFrom.value - Math.max(0, e.translationY) / h),
+      );
+    })
+    .onEnd((e) => {
+      if (
+        1 - progress.value > MOTION.dragClose ||
+        e.velocityY > MOTION.dragVelocity
+      )
+        scheduleOnRN(onClose);
+      else
+        // eslint-disable-next-line react-hooks/immutability -- reanimated 共享值的就地修改是其既定用法
+        progress.value = reduceMotion
+          ? 1
+          : withTiming(1, {
+              duration: MOTION.panelIn,
+              easing: Easing.out(Easing.cubic),
+            });
+    });
   const scrimStyle = useAnimatedStyle(() => ({ opacity: progress.value }));
   const panelStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: (1 - progress.value) * panelHeight.value }],
@@ -1459,6 +1507,8 @@ export function SheetModal({
       onRequestClose={onClose}
       onDismiss={focusBack}
     >
+      {/* Modal 自成原生窗口：手势要在它里面另起一个根，安卓上下拉才收得到。 */}
+      <GestureHandlerRootView style={{ flex: 1 }}>
       {/* Modal 独立成层，不继承打开它的工具栏的嵌套纸面深度。 */}
       <GlassDepth.Provider value={0}>
         <View style={{ flex: 1, justifyContent: "flex-end" }}>
@@ -1481,6 +1531,8 @@ export function SheetModal({
           {/* 面板只做位移：里面有玻璃胶囊，祖先不能改透明度。 */}
           <Animated.View
             accessibilityViewIsModal
+            // 读屏的两指擦除（Z 字）等同于收起。
+            onAccessibilityEscape={onClose}
             onLayout={(e) => {
               panelHeight.value = e.nativeEvent.layout.height;
             }}
@@ -1491,18 +1543,37 @@ export function SheetModal({
                 borderTopLeftRadius: 24,
                 borderTopRightRadius: 24,
                 maxHeight: "82%",
-                paddingTop: 16,
+                paddingTop: 8,
                 paddingHorizontal: 20,
                 paddingBottom: insets.bottom + 12,
               },
               panelStyle,
             ]}
           >
+            <GestureDetector gesture={drag}>
+              <View testID="sheet-drag">
+                {/* 小横条只是「可以往下拉」的提示，读屏不读；收起走标题行的按钮或擦除手势。 */}
+                <View
+                  accessibilityElementsHidden
+                  importantForAccessibility="no-hide-descendants"
+                  style={{
+                    alignSelf: "center",
+                    width: 36,
+                    height: 5,
+                    borderRadius: 2.5,
+                    backgroundColor: colors.line,
+                    marginBottom: 8,
+                  }}
+                />
+                {header}
+              </View>
+            </GestureDetector>
             {children}
           </Animated.View>
         </View>
         <PrivacyCover />
       </GlassDepth.Provider>
+      </GestureHandlerRootView>
     </Modal>
   );
 }

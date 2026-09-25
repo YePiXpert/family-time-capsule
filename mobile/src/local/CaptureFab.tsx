@@ -9,6 +9,7 @@ import { useNav } from "./navigation";
 import { beginDraft } from "./services";
 import {
   ErrorText,
+  MOTION,
   hapticLight,
   messageOf,
   usePressScale,
@@ -26,7 +27,7 @@ const SIZE = FAB_SIZE;
  * iOS 液态玻璃下是赤陶 tint 的系统玻璃圆钮，其余平台是实底赤陶加柔和投影。
  * 玻璃圆钮不做淡入、忙碌时只淡图标：祖先透明度小于 1 时系统不画玻璃，
  * 书架上就只剩一支白铅笔（1.0.0 真机截图）。
- * 按压：玻璃只用系统 isInteractive 的反馈，不再叠一层缩放；纸面圆钮轻缩（MOTION.pressScale）。
+ * 按压：玻璃在系统 isInteractive 的微光之外再缩到 MOTION.glassPressScale；纸面圆钮缩到 MOTION.pressScale。
  */
 export function CaptureFab() {
   const store = useStore(),
@@ -36,7 +37,9 @@ export function CaptureFab() {
   const insets = useSafeAreaInsets();
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
-  const press = usePressScale();
+  const press = usePressScale(
+    liquid ? MOTION.glassPressScale : MOTION.pressScale,
+  );
   return (
     <View
       pointerEvents="box-none"
@@ -55,7 +58,7 @@ export function CaptureFab() {
             ? undefined
             : FadeInUp.delay(240).duration(360)
         }
-        style={liquid ? undefined : press.style}
+        style={press.style}
       >
         <Pressable
           testID="capture-new"
@@ -70,8 +73,8 @@ export function CaptureFab() {
               .catch((e) => setError(messageOf(e)))
               .finally(() => setBusy(false));
           }}
-          onPressIn={liquid ? undefined : press.onPressIn}
-          onPressOut={liquid ? undefined : press.onPressOut}
+          onPressIn={press.onPressIn}
+          onPressOut={press.onPressOut}
           style={[
             {
               width: SIZE,
