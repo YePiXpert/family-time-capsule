@@ -6,15 +6,15 @@
 
 | 对象 | 当前状态 |
 | --- | --- |
-| 功能源码 | main 最新代码提交 `acedaa6`（重构：性能与鲁棒，见下节），已推送 `origin/main`；**手机与服务端都有未发布、未部署的改动** |
+| 功能源码 | main 与 1.1.6 同源（`2323699`），手机与服务端都已交付，无未发布改动 |
 | 生产服务 | `4f9b079`（`4f9b0791869515a5826d4ada7d5cc25abe2aae18`），2026-09-25 20:33 UTC 部署成功，全局 review 与重构的服务端改动都已生效；部署证据 `/opt/anan-ai/deployments/20260925-refactor/` |
 | 文字 AI | `gpt-6-astra`，五种任务统一 `medium` |
 | 语音转写 | `mimo-v2.5-asr`，与文字共用私有上游配置 |
-| 最新安装包 | **1.1.5 / 87**，源码 `e25af17d08281890e0ec5dc822b81fd0f706d972`（冻结前收尾：可靠性与诚实的状态） |
+| 最新安装包 | **1.1.6 / 88**，源码 `232369982e99eceeeeeb6da12c9c2504e459e921`（全局 review 与重构：同步可靠、更快、更稳） |
 
-源码、服务器和安装包分别交付。1.1.5 / 87 之后的全局 review 与重构都改了手机和服务端：服务端已部署；手机随 1.1.6 / 88 发出。
+源码、服务器和安装包分别交付。1.1.5 / 87 之后的全局 review 与重构都改了手机和服务端：服务端 2026-09-25 20:33 UTC 部署，手机 1.1.6 / 88 20:52 UTC 发布。
 
-## 全局 review（2026-09-25，服务端已部署，手机随 1.1.6）
+## 全局 review（2026-09-25，已随服务端 4f9b079 与 1.1.6 交付）
 
 文档与代码一起审了一遍。文档方面：旧计划与审查归档到 [docs/history/](docs/history/README.md)，新增[结构与协议](docs/ARCHITECTURE.md)（含 36 条服务端接口），现行文档逐条按代码校正，真机待验项并进[验收清单](docs/ACCEPTANCE.md)。仓库方面：根目录 `npm run check` 跑全部门禁，清掉了模板遗留文件，部署文件里的私有值改为环境变量。
 
@@ -38,7 +38,7 @@
 
 门禁（`npm run check`）：手机 **886**、服务端 **220**、Python **55** 项全部通过，双端类型检查、手机 Lint 和网络边界检查也通过；推送 `b9a10ef` 前跑过（之后的数字见下节）。全部用合成资料，未调用付费上游，未连生产。
 
-## 重构：性能与鲁棒（2026-09-25，服务端已部署，手机随 1.1.6）
+## 重构：性能与鲁棒（2026-09-25，已随服务端 4f9b079 与 1.1.6 交付）
 
 主人定的范围是「手机＋服务端全部」，重构完一起部署。提交：服务端 `e7b3b1f`、`fcc53db`，手机 `fa96d5c`、`cf55222`＋`b2635dc`、`5a9163e`、`6582217`、`6fceac1`、`c980227`、`acedaa6`。所有数字都在本地用合成资料测得。
 
@@ -86,19 +86,21 @@
 
 ## 已交付安装包
 
-[Release 1.1.5](https://github.com/YePiXpert/family-time-capsule/releases/tag/v1.1.5)：标签 `v1.1.5` → `e25af17d08281890e0ec5dc822b81fd0f706d972`，来自 [run 36107983728](https://github.com/YePiXpert/family-time-capsule/actions/runs/36107983728)，八个作业（含 GitHub Release）成功；此前验证构建 [run 36106563461](https://github.com/YePiXpert/family-time-capsule/actions/runs/36106563461)（`9eb6483`）七个作业全绿。APK、未签名 IPA、build-source.json 与 SHA-256 已下载核对，Release 与 CI 构建产物逐字节相同；APK（versionName／versionCode）、iOS 主应用及分享扩展均为 1.1.5 / 87。
+[Release 1.1.6](https://github.com/YePiXpert/family-time-capsule/releases/tag/v1.1.6)：标签 `v1.1.6` → `232369982e99eceeeeeb6da12c9c2504e459e921`，来自 [run 36186790573](https://github.com/YePiXpert/family-time-capsule/actions/runs/36186790573)（20:36–20:52 UTC），八个作业（含 GitHub Release）成功。APK、未签名 IPA 与 build-source.json 已下载核对：Release 与 CI 产物逐字节相同，Release 校验和一致；APK（versionName／versionCode）、iOS 主应用及分享扩展均为 1.1.6 / 88。
 
 | 文件 | SHA-256 |
 | --- | --- |
-| `FamilyTimeCapsule-android.apk` | `f3544468fa780fb46dad9f498bcaf850ec6ebe7f9fa7970f27c0ee5047b75c04` |
-| `FamilyTimeCapsule-ios-unsigned.ipa` | `9f42851e24125d8f51bf7958dc9df9eeb7724308cfc94ab77ddb2c3acfb45bbc` |
+| `FamilyTimeCapsule-android.apk` | `2cf952228d68601e4c972ea897dfc7ea41c6fc2c929d0bbfa182da55768bcd5f` |
+| `FamilyTimeCapsule-ios-unsigned.ipa` | `533d5a65ed69a36ec6f5c81548cbb4990878bf3e61bcdfa8605df5c7f6317943` |
 
-安卓冒烟（320／390：编辑器与信一屏、备份往返与「已存好」确认、可阅读副本分享）、iOS 26.5 模拟器启动 9 项及完整回归（含搜索键盘、扉页、档案、存储、看图巡检）通过，报告源码均等于安装包完整 SHA。核验摘要：`/var/tmp/anan-1.1.5-verified/verification.json`。
+安卓本机回归（320／390：编辑器与信一屏、离线启动、草稿恢复、备份往返、年度册、封信、可阅读副本分享）、iOS 26.5 启动验证与完整回归（年度册 PDF、开放归档、完整备份恢复、打不开的资料库找回）通过，报告源码均等于安装包完整 SHA。核验摘要：`/var/tmp/anan-1.1.6-verified/verification.json`。
+
+上一版 [Release 1.1.5](https://github.com/YePiXpert/family-time-capsule/releases/tag/v1.1.5)（`e25af17`，run 36107983728）已被取代。
 
 ## 剩余事项
 
 1. **服务端已部署（2026-09-25，主人授权）**：`4f9b079` 按[部署指南](deploy/README.md)先过 staging（3141 空库，`verify-service.py --skip-text --skip-transcribe` 全过；匿名 5 MiB 请求 3 毫秒回 401，匿名接口 2 MiB 回 413，`docker stop` 退出码 0），再停写、快照数据目录、切换。切换后本机与公网健康均为新版本，匿名接口仍拒绝，家庭／成员／设备／设置／清单逐行不变，四条新索引已建，两个监听地址与切换前一致（私有 env 已补 `APP_BIND`）；旧容器停机 0.5 秒。未调用付费上游。
-2. **手机 1.1.6 / 88**：世系修复、恢复码先抄后交、根字段同步、性能与失败路径修复随这一版发出。交付后在「已交付安装包」一节记源码 SHA、构建与校验和。
+2. **手机 1.1.6 / 88 已交付**（见上节）。真机上值得先看：年度册「AI 建议目录」（一年记得多也能用）、重新生成恢复码先抄后交、分享进来的照片不再占双份空间。
 3. **1.1.5 的收尾改动（备份「已存好」、冲突页、应用锁提示）与 1.1.4 的设置新布局、纸卡外观与 iOS 动效真机手感未验**（模拟器回归与截图已过）。按 [验收清单](docs/ACCEPTANCE.md) 第二部分看。
 4. **两台真机完整验收尚未完成**。按 [验收清单](docs/ACCEPTANCE.md) 验扫码、双向声像同步、冲突留底、断网重启和备份换机；用测试资料演练恢复。
 5. 完成后持续使用，只修实际问题。公开注册、多租户、多孩子不做；密钥轮换已延期，不重新列为本轮前提。
