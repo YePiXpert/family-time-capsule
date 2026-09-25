@@ -66,7 +66,6 @@ import {
   Card,
   ErrorText,
   IconButton,
-  IconTile,
   Ornament,
   Page,
   SectionHeader,
@@ -82,7 +81,6 @@ import {
   useStyles,
   useTextScale,
   useTheme,
-  type TileTone,
 } from "./ui";
 import { JournalIcon, type JournalIconName } from "../components/JournalIcon";
 import { Photo } from "./Media";
@@ -127,12 +125,11 @@ function useTileSize() {
 }
 
 /**
- * 新建的引导行：图标砖 + 一句说明，点按即新建——说明与下一步合一，不摆虚位册。
+ * 新建的引导行：线性图标 + 一句说明，点按即新建——说明与下一步合一，不摆虚位册。
  * 调用方把几行成组放进一张 BookRows。
  */
 function GuideRow({
   icon,
-  tone,
   title,
   hint,
   testID,
@@ -140,7 +137,6 @@ function GuideRow({
   last = false,
 }: {
   icon: JournalIconName;
-  tone: TileTone;
   title: string;
   hint: string;
   testID?: string;
@@ -149,7 +145,7 @@ function GuideRow({
 }) {
   return (
     <SettingsRow
-      leading={<IconTile icon={icon} tone={tone} />}
+      icon={icon}
       label={title}
       subtitle={hint}
       onPress={onPress}
@@ -1481,7 +1477,6 @@ export function Shelf() {
           <BookRows>
             <GuideRow
               icon="seal"
-              tone="indigo"
               title="写一封信"
               hint="给多年后的她写一封信，到日子再拆。"
               testID="letter-new"

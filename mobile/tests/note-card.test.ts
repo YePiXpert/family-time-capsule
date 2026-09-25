@@ -42,7 +42,7 @@ vi.mock("../src/local/ui", () => ({
   Button: "Button",
   ErrorText: "ErrorText",
   Field: "Field",
-  Glass: "Glass",
+  Card: "Card",
   Text: "Text",
   messageOf: (error: Error) => error.message,
   useStyles: () => ({}),

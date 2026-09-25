@@ -35,7 +35,6 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import { NavigationContext } from "@react-navigation/native";
-import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import {
   GlassView,
   isGlassEffectAPIAvailable,
@@ -90,17 +89,6 @@ const light = {
   selectedGlass: "#F5E7D3",
   scrim: "rgba(59,49,41,0.32)",
   accentSoft: "rgba(178,84,59,0.28)",
-  glow1: "#F3D9B8",
-  glow2: "#EFC5B0",
-  glow3: "#E8DCC4",
-  // 功能入口的图标砖：彩色浅底圆角方块 + 实色图标，一个功能一个颜色锚点。
-  // 前景色一律压到与砖底对比 ≥3:1；强调色不提亮——它在纸面上要保住 4.5:1 的文字对比。
-  tiles: {
-    accent: { bg: "rgba(178,84,59,0.12)", fg: "#B2543B" },
-    apricot: { bg: "rgba(196,142,42,0.14)", fg: "#9C6E1E" },
-    indigo: { bg: "rgba(80,104,140,0.12)", fg: "#50688C" },
-    pine: { bg: "rgba(85,118,92,0.13)", fg: "#55765C" },
-  },
 };
 const dark: typeof light = {
   paper: "#221C16",
@@ -118,15 +106,6 @@ const dark: typeof light = {
   selectedGlass: "#3A2D20",
   scrim: "rgba(0,0,0,0.45)",
   accentSoft: "rgba(224,155,118,0.32)",
-  glow1: "#3A2A1C",
-  glow2: "#40241C",
-  glow3: "#2E2A1E",
-  tiles: {
-    accent: { bg: "rgba(224,155,118,0.16)", fg: "#E09B76" },
-    apricot: { bg: "rgba(217,169,92,0.16)", fg: "#D9A95C" },
-    indigo: { bg: "rgba(163,184,217,0.16)", fg: "#A3B8D9" },
-    pine: { bg: "rgba(159,190,165,0.16)", fg: "#9FBEA5" },
-  },
 };
 // 导出纸面（纪念卡/纸书）固定纸面浅色，与浅色色板单源。
 export const paperPalette = {
@@ -345,65 +324,14 @@ export function Text({ style, ...props }: TextProps) {
     />
   );
 }
+/** 页底：纯暖米纸色，不加光斑。卡片与玻璃控件都画在它上面。 */
 export const GlassBackdrop = memo(function GlassBackdrop() {
-  const { colors, dark } = useTheme();
-  const { width, height } = useWindowDimensions();
-  const glowOpacity = dark ? 0.5 : 0.55;
+  const { colors } = useTheme();
   return (
     <View
       pointerEvents="none"
       style={[StyleSheet.absoluteFill, { backgroundColor: colors.paper }]}
-    >
-      <Svg width={width} height={height}>
-        <Defs>
-          <RadialGradient
-            id="glow1"
-            cx={width * 0.12}
-            cy={height * 0.08}
-            r={width * 0.95}
-            gradientUnits="userSpaceOnUse"
-          >
-            <Stop
-              offset="0"
-              stopColor={colors.glow1}
-              stopOpacity={glowOpacity}
-            />
-            <Stop offset="1" stopColor={colors.glow1} stopOpacity="0" />
-          </RadialGradient>
-          <RadialGradient
-            id="glow2"
-            cx={width * 0.95}
-            cy={height * 0.3}
-            r={width * 0.85}
-            gradientUnits="userSpaceOnUse"
-          >
-            <Stop
-              offset="0"
-              stopColor={colors.glow2}
-              stopOpacity={glowOpacity}
-            />
-            <Stop offset="1" stopColor={colors.glow2} stopOpacity="0" />
-          </RadialGradient>
-          <RadialGradient
-            id="glow3"
-            cx={width * 0.3}
-            cy={height * 1.0}
-            r={width * 1.05}
-            gradientUnits="userSpaceOnUse"
-          >
-            <Stop
-              offset="0"
-              stopColor={colors.glow3}
-              stopOpacity={glowOpacity}
-            />
-            <Stop offset="1" stopColor={colors.glow3} stopOpacity="0" />
-          </RadialGradient>
-        </Defs>
-        <Rect width={width} height={height} fill="url(#glow1)" />
-        <Rect width={width} height={height} fill="url(#glow2)" />
-        <Rect width={width} height={height} fill="url(#glow3)" />
-      </Svg>
-    </View>
+    />
   );
 });
 /** 玻璃层级：Card 内部深度 +1，深度 ≥ 1 的 Glass 退回实色纸面，玻璃不套玻璃、卡不套卡。 */
@@ -477,11 +405,6 @@ export function Glass({
           borderWidth: StyleSheet.hairlineWidth,
           borderColor: colors.glassLine,
           backgroundColor: tint ?? colors.glass,
-          shadowColor: dark ? "#000000" : "#7A5C3E",
-          shadowOffset: { width: 0, height: 5 },
-          shadowOpacity: dark ? 0.35 : 0.09,
-          shadowRadius: 18,
-          elevation: 3,
         },
         style,
       ]}
@@ -490,36 +413,10 @@ export function Glass({
     </View>
   );
 }
-/** 图标砖色调：accent 赤陶 / apricot 杏 / indigo 靛蓝 / pine 墨绿，一个功能一个颜色锚点。 */
-export type TileTone = keyof typeof light.tiles;
-/** 功能入口的图标砖：彩色浅底圆角方块承着实色图标，给每个功能一个颜色锚点。 */
-export function IconTile({
-  icon,
-  tone = "accent",
-  size = 36,
-}: {
-  icon: JournalIconName;
-  tone?: TileTone;
-  size?: number;
-}) {
-  const { colors } = useTheme();
-  const tile = colors.tiles[tone];
-  return (
-    <View
-      style={{
-        width: size,
-        height: size,
-        borderRadius: Math.round(size * 0.3),
-        backgroundColor: tile.bg,
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      <JournalIcon name={icon} color={tile.fg} size={Math.round(size * 0.56)} />
-    </View>
-  );
-}
-/** 内容卡片：iOS 液态玻璃 / Android 与降级实色纸面，compact 为紧凑面板。 */
+/**
+ * 内容卡片：所有平台都是实色纸卡——内容色底、暖色细描边，没有投影、没有玻璃高光。
+ * 读的地方都是纸；液态玻璃只留给卡外的操作控件。卡里深度 +1，按钮退回实色。compact 为紧凑面板。
+ */
 export function Card({
   children,
   compact = false,
@@ -532,11 +429,17 @@ export function Card({
   testID?: string;
 }) {
   const depth = useContext(GlassDepth);
+  const { colors } = useTheme();
   return (
-    <Glass
-      radius={compact ? 12 : 16}
+    <View
       testID={testID}
       style={[
+        {
+          borderRadius: compact ? 12 : 16,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: colors.line,
+          backgroundColor: colors.card,
+        },
         compact
           ? { paddingHorizontal: 12, paddingVertical: 8, gap: 8 }
           : { padding: 16, gap: 12 },
@@ -544,7 +447,7 @@ export function Card({
       ]}
     >
       <GlassDepth.Provider value={depth + 1}>{children}</GlassDepth.Provider>
-    </Glass>
+    </View>
   );
 }
 /** 区标题：无衬线辅助色小标题 + 右侧文字级动作（书架各区、设置分组）。 */
@@ -589,13 +492,12 @@ export function SettingsGroup({
   );
 }
 /**
- * 设置行：图标砖（或自定义前导）+ 标签 + 副题（读屏作为值朗读）+ 右箭头，放在 SettingsGroup 里成组。
+ * 设置行：线性图标（或自定义前导）+ 标签 + 副题（读屏作为值朗读）+ 右箭头，放在 SettingsGroup 里成组。
  * 书架的书册行也用它：`leading` 换成小封面，`serifLabel` 让标签走衬线（书名）。
  * 不给 onPress 就是只读行：不能按、没有右箭头（家人看家人名单）。
  */
 export function SettingsRow({
   icon,
-  tone = "accent",
   leading,
   serifLabel = false,
   label,
@@ -604,9 +506,8 @@ export function SettingsRow({
   testID,
   last = false,
 }: {
+  /** 行首线性图标：统一辅助色，不按功能分色、不垫色块。 */
   icon?: JournalIconName;
-  /** 图标砖的色调：一个功能一个颜色锚点。 */
-  tone?: TileTone;
   /** 代替图标的前导视图（书册行的小封面）。 */
   leading?: ReactNode;
   /** 标签走衬线：这一行是一本书。 */
@@ -638,7 +539,12 @@ export function SettingsRow({
         opacity: pressed ? 0.6 : 1,
       })}
     >
-      {leading ?? (icon && <IconTile icon={icon} tone={tone} />)}
+      {leading ??
+        (icon && (
+          <View style={{ width: 28, alignItems: "center" }}>
+            <JournalIcon name={icon} color={colors.muted} size={22} />
+          </View>
+        ))}
       <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
         <Text
           numberOfLines={serifLabel ? 2 : undefined}
@@ -724,13 +630,6 @@ export function DateStrip({ children }: { children: ReactNode }) {
 export function useStyles() {
   const { colors: c, dark, large } = useTheme();
   return useMemo(() => {
-    const cardShadow: ViewStyle = {
-      shadowColor: dark ? "#000000" : "#7A5C3E",
-      shadowOffset: { width: 0, height: 5 },
-      shadowOpacity: dark ? 0.35 : 0.09,
-      shadowRadius: 18,
-      elevation: 3,
-    };
     return StyleSheet.create({
       page: { flex: 1, backgroundColor: c.paper },
       content: { padding: 20, gap: 20, paddingBottom: 32 },
@@ -816,7 +715,6 @@ export function useStyles() {
         borderColor: c.glassLine,
         padding: 16,
         gap: 12,
-        ...cardShadow,
       },
       line: {
         height: StyleSheet.hairlineWidth,
@@ -852,7 +750,6 @@ export function useStyles() {
         borderWidth: StyleSheet.hairlineWidth,
         borderColor: c.glassLine,
         marginBottom: 12,
-        ...cardShadow,
       },
       fabShadow: {
         shadowColor: dark ? "#000000" : "#7A5C3E",
@@ -860,12 +757,6 @@ export function useStyles() {
         shadowOpacity: 0.25,
         shadowRadius: 10,
         elevation: 4,
-      },
-      recordRowInner: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 12,
-        padding: 12,
       },
       dateHeading: {
         flexDirection: "row",

@@ -153,12 +153,10 @@ export function Settings() {
           <JournalIcon name="chevron-right" color={colors.muted} size={18} />
         </Pressable>
       </Card>
-      {/* 五行设置收在一张纸卡里，不分组、不挂区标题：几张一行的小卡叠起来像一摞盒子。
-          图标砖只用两个暖色：写的事（落款、AI）赤陶，保管与这台手机（备份、存储、外观）杏色。 */}
+      {/* 五行设置收在一张纸卡里，不分组、不挂区标题：几张一行的小卡叠起来像一摞盒子。 */}
       <SettingsGroup>
         <SettingsRow
           icon="edit"
-          tone="accent"
           label="我的落款"
           subtitle={
             state.settings.by ? `—— ${state.settings.by}` : "还没定，记一刻时会问"
@@ -167,7 +165,6 @@ export function Settings() {
         />
         <SettingsRow
           icon="archive"
-          tone="apricot"
           label="备份与恢复"
           subtitle={
             sync.conflicts > 0
@@ -190,14 +187,12 @@ export function Settings() {
         />
         <SettingsRow
           icon="phone"
-          tone="apricot"
           label="本机存储"
           subtitle={`照片和录音占用 ${(bytes / 1048576).toFixed(1)} MB`}
           onPress={() => nav.navigate("Storage")}
         />
         <SettingsRow
           icon="person"
-          tone="pine"
           label="家庭与设备"
           subtitle={aiState}
           testID="settings-family"
@@ -205,7 +200,6 @@ export function Settings() {
         />
         <SettingsRow
           icon="appearance"
-          tone="apricot"
           label="外观设置"
           subtitle={state.settings.largeText ? `${theme} · 更大文字` : theme}
           onPress={() => nav.navigate("Appearance")}
