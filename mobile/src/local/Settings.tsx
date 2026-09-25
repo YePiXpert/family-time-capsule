@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import { Alert, Pressable, StyleSheet, Switch, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
@@ -81,20 +82,23 @@ export function Settings() {
   const [signedIn, setSignedIn] = useState<boolean | undefined>(undefined);
   const [error, setError] = useState("");
   const [stamped, setStamped] = useState<number | null>(null);
-  useEffect(() => {
-    let live = true;
-    // 只看本机有没有家庭令牌，不联网：离线打开「设置」也不该转圈或报错。
-    getToken()
-      .then((token) => {
-        if (live) setSignedIn(!!token);
-      })
-      .catch(() => {
-        if (live) setSignedIn(false);
-      });
-    return () => {
-      live = false;
-    };
-  }, []);
+  // 每次回到这一页都重读：从家庭页加入或退出回来，副题要跟着变。
+  useFocusEffect(
+    useCallback(() => {
+      let live = true;
+      // 只看本机有没有家庭令牌，不联网：离线打开「设置」也不该转圈或报错。
+      getToken()
+        .then((token) => {
+          if (live) setSignedIn(!!token);
+        })
+        .catch(() => {
+          if (live) setSignedIn(false);
+        });
+      return () => {
+        live = false;
+      };
+    }, []),
+  );
   const name = state.profile.name.trim() || CHILD_FALLBACK,
     birthday = birthdayLabel(state.profile.birthday),
     age = ageLine(state.profile.birthday),
@@ -612,6 +616,8 @@ function useBackupActions() {
     [backups, setBackups] = useState(() => listLocalBackups());
   const locked = busy || sync.running;
   const refreshList = () => setBackups(listLocalBackups());
+  // 从恢复页回来时恢复记录可能多了一份（恢复前自动留的）：回到页面就重读。
+  useFocusEffect(useCallback(() => setBackups(listLocalBackups()), []));
   const perform = async (fn: () => Promise<void>) => {
     // 确认框可能在同步开始前打开，真正执行时再检查一次。
     if (isSyncRunning()) {
