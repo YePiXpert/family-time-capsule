@@ -8,6 +8,7 @@ const env = vi.hoisted(() => ({
   focus: undefined as (() => (() => void) | void) | undefined,
   items: [] as Conflict[],
   change: vi.fn(), write: vi.fn(),
+  running: false, localBusy: false, busyDuringChange: [] as boolean[],
 }));
 vi.mock("react", () => ({
   useState: (initial: unknown) => {
@@ -21,14 +22,23 @@ vi.mock("react", () => ({
 }));
 vi.mock("react-native", () => ({ View: "View" }));
 vi.mock("@react-navigation/native", () => ({ useFocusEffect: (fn: () => void) => { env.focus = fn; } }));
-vi.mock("../src/local/context", () => ({ useStore: () => ({ change: env.change }) }));
+vi.mock("../src/local/context", () => ({
+  useStore: () => ({ change: env.change }),
+  useSyncStatus: () => ({ running: env.running }),
+}));
+vi.mock("../src/sync/status", () => ({
+  isSyncRunning: () => env.running,
+  isLocalBusy: () => env.localBusy,
+  markLocalBusy: (value: boolean) => { env.localBusy = value; },
+}));
 vi.mock("../src/local/ui", () => ({
   Button: "Button", Card: "Card", ErrorText: "ErrorText", Field: "Field", Page: "Page", Text: "Text",
   messageOf: (e: Error) => e.message, useStyles: () => ({}), useTheme: () => ({ colors: {} }),
 }));
 vi.mock("../src/sync/state", () => ({
   readConflicts: async () => structuredClone(env.items),
-  writeConflicts: (items: Conflict[]) => { env.write(items); env.items = items; },
+  writeConflicts: (items: Conflict[]) => { env.busyDuringChange.push(env.localBusy); env.write(items); env.items = items; },
+  subscribeSyncFiles: () => () => {},
 }));
 
 type Element = { type?: unknown; props?: { testID?: string; children?: unknown; title?: string; message?: string; onPress?: () => void; onChangeText?: (text: string) => void } };
@@ -63,6 +73,7 @@ async function focusedConflicts() {
 beforeEach(() => {
   vi.clearAllMocks();
   env.slots = []; env.cursor = 0; env.items = []; env.focus = undefined;
+  env.running = false; env.localBusy = false; env.busyDuringChange = [];
 });
 it("冲突倒序显示全文、删除赢家与本机来源，无标题时不拿正文充数", async () => {
   env.items = [conflict("old"), conflict("new", "2026-09-21T10:00:00.000Z")];
@@ -105,4 +116,24 @@ it("知道了只移除所选留底，保留后来追加的另一条", async () =
   find(tree, "conflict-dismiss-r")!.props!.onPress!();
   await vi.waitFor(() => expect(env.items.map((c) => c.entityId)).toEqual(["new"]));
   expect(env.change).not.toHaveBeenCalled();
+});
+it("同步进行中不能换回或移除留底，免得盖掉同步刚留下的另一版", async () => {
+  env.items = [conflict()];
+  await focusedConflicts();
+  env.running = true;
+  const tree = renderConflicts();
+  expect(find(tree, "conflict-use-r")!.props).toMatchObject({ disabled: true });
+  expect(find(tree, "conflict-dismiss-r")!.props).toMatchObject({ disabled: true });
+  // 按钮刚好在同步开始前按下：执行时再查一次，不写库也不写留底。
+  find(tree, "conflict-dismiss-r")!.props!.onPress!();
+  await vi.waitFor(() => expect(env.slots[2]).toBe("正在与家人同步，等它完成再试。"));
+  expect(env.change).not.toHaveBeenCalled();
+  expect(env.write).not.toHaveBeenCalled();
+});
+it("改留底期间占住本机互斥，自动同步不会插进来", async () => {
+  env.items = [conflict()];
+  find(await focusedConflicts(), "conflict-dismiss-r")!.props!.onPress!();
+  await vi.waitFor(() => expect(env.items).toEqual([]));
+  expect(env.busyDuringChange).toEqual([true]);
+  await vi.waitFor(() => expect(env.localBusy).toBe(false));
 });

@@ -1,7 +1,7 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
-import { useStore } from "../local/context";
+import { useStore, useSyncStatus } from "../local/context";
 import { dateLabel, dateTimeLabel } from "../local/dates";
 import type { LocalLetter, LocalRecord } from "../local/model";
 import {
@@ -15,7 +15,13 @@ import {
   useTheme,
 } from "../local/ui";
 import { restoreLoser } from "./conflicts";
-import { readConflicts, writeConflicts, type Conflict } from "./state";
+import {
+  readConflicts,
+  subscribeSyncFiles,
+  writeConflicts,
+  type Conflict,
+} from "./state";
+import { isLocalBusy, isSyncRunning, markLocalBusy } from "./status";
 
 const newestFirst = (items: Conflict[]) =>
   items.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
@@ -27,7 +33,8 @@ export function Conflicts() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-  useFocusEffect(useCallback(() => {
+  const sync = useSyncStatus();
+  const load = useCallback(() => {
     let live = true;
     void readConflicts()
       .then((next) => {
@@ -40,8 +47,32 @@ export function Conflicts() {
         if (live) setError(messageOf(e));
       });
     return () => { live = false; };
-  }, []));
+  }, []);
+  useFocusEffect(load);
+  // 页面开着时回到应用会自动同步，新留下的另一版要跟着出现。
+  useEffect(() => {
+    let stop = () => {};
+    const unsubscribe = subscribeSyncFiles(() => {
+      stop();
+      stop = load();
+    });
+    return () => {
+      stop();
+      unsubscribe();
+    };
+  }, [load]);
   const resolve = async (conflict: Conflict, restore: boolean) => {
+    // 同步会读、并、写同一份留底：和它同时改，刚留下的另一版会被这里的旧列表盖掉。
+    // 占住本机互斥，自动同步等这一步写完再开始。
+    if (isSyncRunning()) {
+      setMessage("正在与家人同步，等它完成再试。");
+      return;
+    }
+    if (isLocalBusy()) {
+      setMessage("上一个操作还没结束，等它完成再试。");
+      return;
+    }
+    markLocalBusy(true);
     setBusy(true);
     setError("");
     setMessage("");
@@ -60,9 +91,11 @@ export function Conflicts() {
     } catch (e) {
       setError(messageOf(e));
     } finally {
+      markLocalBusy(false);
       setBusy(false);
     }
   };
+  const locked = busy || sync.running;
   return (
     <Page title="两台手机都改过" testID="conflicts">
       <ErrorText message={error} />
@@ -96,14 +129,14 @@ export function Conflicts() {
               <Button
                 title="用这一版"
                 testID={`conflict-use-${entityId}`}
-                disabled={busy}
+                disabled={locked}
                 onPress={() => { void resolve(conflict, true); }}
               />
               <Button
                 title="知道了"
                 kind="text"
                 testID={`conflict-dismiss-${entityId}`}
-                disabled={busy}
+                disabled={locked}
                 onPress={() => { void resolve(conflict, false); }}
               />
             </View>
