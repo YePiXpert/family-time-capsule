@@ -309,8 +309,15 @@ export async function upgradeFamily(d: FlowDeps): Promise<{ words: string; famil
   await api.upgrade({ publicKey: toBase64Url(device.publicKey), familyId, keyId: keyIdOf(key), recovery });
   return { words, familyId, key };
 }
-/** 管理者重新生成恢复码：新的一套立刻生效，旧的作废。 */
-export async function regenerateRecovery(d: FlowDeps): Promise<{ words: string }> {
+export type PreparedRecovery = {
+  words: string;
+  input: Parameters<FamilyApi["setRecovery"]>[0];
+};
+/**
+ * 换恢复码第一步：备好新的一套供抄写核对，此时还没交给服务，纸上旧的那套照样能用。
+ * 新词只在这份内存结果里；核对后再用 submitRecovery 交同一份。
+ */
+export async function prepareRecovery(d: FlowDeps): Promise<PreparedRecovery> {
   const { api, vault, random } = deps(d);
   const family = await api.family();
   if (family.me.role !== "admin") throw new FamilyError("ADMIN_ONLY", "只有管理者能换恢复码。");
@@ -319,8 +326,19 @@ export async function regenerateRecovery(d: FlowDeps): Promise<{ words: string }
     throw new FamilyError("KEY_MISMATCH", "这台手机的钥匙和家庭对不上。");
   const version = family.recoveryVersion + 1;
   const { words, recovery } = recoveryFor(key, family.familyId, version, random);
-  await api.setRecovery({ keyId: family.keyId, version, ...recovery });
-  return { words };
+  return { words, input: { keyId: family.keyId, version, ...recovery } };
+}
+/**
+ * 换恢复码第二步：交上已核对的那一份，生效后旧的作废。响应丢了可以原样再交，服务把同一份重交当作成功。
+ */
+export async function submitRecovery(d: FlowDeps, prepared: PreparedRecovery): Promise<void> {
+  await deps(d).api.setRecovery(prepared.input);
+}
+/** 不经界面核对、直接换恢复码的组合流程（测试与脚本用）。 */
+export async function regenerateRecovery(d: FlowDeps): Promise<{ words: string }> {
+  const prepared = await prepareRecovery(d);
+  await submitRecovery(d, prepared);
+  return { words: prepared.words };
 }
 /** 找回第一步：核对恢复码，列出管理者让选「我是谁」。 */
 export async function recoveryAdmins(d: FlowDeps, words: string) {

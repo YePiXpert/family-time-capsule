@@ -13,8 +13,10 @@ import {
   prepareFamilyStart,
   recoverAsAdmin,
   recoveryAdmins,
+  prepareRecovery,
   regenerateRecovery,
   requestToJoin,
+  submitRecovery,
   startFamily,
   upgradeFamily,
   type FlowDeps,
@@ -276,5 +278,30 @@ it("1.0.8 的主人手机升级成家庭管理者，沿用本机原有的内容�
     expect((await recoverAsAdmin(lost, secret, admins[0]!.id, "新手机")).key).toEqual(oldKey);
   } finally {
     await legacy.stop();
+  }
+}, 60000);
+
+it("换恢复码先抄后交：核对前旧的照常能用；响应丢了原样再交就成，新的一套能找回", async () => {
+  const other = await startServer();
+  try {
+    const dad = phone(other.base);
+    const started = await startFamily(dad, { activationCode: other.activationCode(), memberName: "爸爸", deviceName: "爸爸的手机" });
+    const prepared = await prepareRecovery(dad);
+    // 只是备好、还没交：服务不变，纸上旧的那套照常能用。
+    expect((await dad.api.family()).recoveryVersion).toBe(1);
+    expect((await recoveryAdmins(phone(other.base), started.words)).admins.map((a) => a.name)).toEqual(["爸爸"]);
+    // 服务收下了，手机没收到响应。
+    vi.spyOn(dad.api, "setRecovery").mockImplementationOnce(async (input) => {
+      await createFamilyApi(fetchRequest(other.base), async () => dad.box.token).setRecovery(input);
+      throw new FamilyError("NETWORK", "现在连不上服务，请稍后再试。");
+    });
+    await expect(submitRecovery(dad, prepared)).rejects.toMatchObject({ code: "NETWORK" });
+    // 再点一次交的是同一套：服务当作成功，不再加版本。
+    await submitRecovery(dad, prepared);
+    expect((await dad.api.family()).recoveryVersion).toBe(2);
+    expect(await code(recoveryAdmins(phone(other.base), started.words))).toBe("RECOVERY_INVALID");
+    expect((await recoveryAdmins(phone(other.base), prepared.words)).admins.map((a) => a.name)).toEqual(["爸爸"]);
+  } finally {
+    await other.stop();
   }
 }, 60000);

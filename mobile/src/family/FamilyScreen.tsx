@@ -37,7 +37,9 @@ import {
   prepareFamilyStart,
   recoverAsAdmin,
   recoveryAdmins,
-  regenerateRecovery,
+  prepareRecovery,
+  submitRecovery,
+  type PreparedRecovery,
   requestToJoin,
   upgradeFamily,
   type Inspected,
@@ -61,6 +63,7 @@ type Step =
   | { kind: "start" }
   | { kind: "startWords"; prepared: PreparedFamilyStart }
   | { kind: "words"; words: string }
+  | { kind: "regenWords"; prepared: PreparedRecovery }
   | { kind: "join" }
   | { kind: "qr"; join: JoinRequest }
   | { kind: "approved"; joined: JoinedFamily; recovered: boolean; readable: string | null }
@@ -174,10 +177,14 @@ export function FamilyScreen({ navigation }: Props<"Family">) {
   }, [api, load]);
   // 恢复码还没核对完就离开：说清楚后果，由人决定。
   useEffect(() => {
-    if (step.kind !== "words" && step.kind !== "startWords") return;
+    if (step.kind !== "words" && step.kind !== "startWords" && step.kind !== "regenWords") return;
+    const note =
+      step.kind === "regenWords"
+        ? "离开后这一套不会保留。还没交上去时，旧的那张纸照常能用；如果刚才提交报了错，服务可能已经换好，请先抄下这一套。"
+        : "离开后这一页不会保留。请先抄好纸上的恢复码；如果家庭已经创建，用它可以找回。";
     return navigation.addListener("beforeRemove", (event) => {
       event.preventDefault();
-      Alert.alert("恢复码还没核对完", "离开后这一页不会保留。请先抄好纸上的恢复码；如果家庭已经创建，用它可以找回。", [
+      Alert.alert("恢复码还没核对完", note, [
         { text: "留下", style: "cancel" },
         { text: "离开", style: "destructive", onPress: () => navigation.dispatch(event.data.action) },
       ]);
@@ -541,6 +548,29 @@ export function FamilyScreen({ navigation }: Props<"Family">) {
             void load("恢复码已核对。请把那张纸收好。");
           }}
         />
+      );
+      break;
+    case "regenWords":
+      body = (
+        <>
+          <RecoveryWords
+            words={step.prepared.words}
+            busy={busy}
+            submitError={error}
+            confirmTitle={busy ? "正在更换…" : "核对并换成这一套"}
+            onDone={() =>
+              void run(async () => {
+                await submitRecovery({ api }, step.prepared);
+                await load("恢复码已换成新的一套，旧的那张纸作废了。请把新的收好。");
+              })
+            }
+          />
+          {!!error && (
+            <Text style={s.muted}>
+              服务可能已经换好了。再点一次上面的按钮即可，交的是同一套；在看到「已换成新的一套」之前，别丢掉旧的那张纸。
+            </Text>
+          )}
+        </>
       );
       break;
     case "join":
@@ -908,14 +938,13 @@ export function FamilyScreen({ navigation }: Props<"Family">) {
                 testID="family-regenerate"
                 disabled={busy}
                 onPress={() =>
-                  Alert.alert("重新生成恢复码？", "新的一套马上生效，纸上那套旧的就作废了。", [
+                  Alert.alert("重新生成恢复码？", "先抄下新的一套并核对，核对后才生效，纸上那套旧的随之作废。", [
                     { text: "取消", style: "cancel" },
                     {
                       text: "重新生成",
                       onPress: () =>
                         void run(async () => {
-                          const done = await regenerateRecovery({ api });
-                          go({ kind: "words", words: done.words });
+                          go({ kind: "regenWords", prepared: await prepareRecovery({ api }) });
                         }),
                     },
                   ])

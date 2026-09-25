@@ -123,12 +123,14 @@ export class Store {
     })();
     return this.family()!;
   }
-  /** 管理者重新生成恢复码：版本只能加一，钥匙指纹必须是这个家庭的；旧恢复码随之失效。 */
+  /** 管理者重新生成恢复码：版本只能加一，钥匙指纹必须是这个家庭的；旧恢复码随之失效。同一份原样重交视为成功。 */
   setRecovery(input: { envelope: string; verifier: string; version: number; keyId: string }) {
     this.db.transaction(() => {
       const family=this.family();
       if(!family) throw new Problem(404,'FAMILY_MISSING','这台服务还没有家庭。');
       if(input.keyId!==family.keyId) throw new Problem(409,'KEY_MISMATCH','这台手机的钥匙和家庭对不上。');
+      // 响应丢失后原样重交：这一套已经生效，照样算成功，手机才能收尾。
+      if(input.version===family.recoveryVersion&&input.verifier===family.recoveryVerifier&&input.envelope===family.recoveryEnvelope)return;
       if(input.version!==family.recoveryVersion+1) throw new Problem(409,'RECOVERY_CHANGED','恢复码刚被别的管理者换过，请刷新后再试。');
       this.db.prepare('UPDATE family SET recovery_envelope=?,recovery_verifier=?,recovery_version=? WHERE id=1').run(input.envelope,input.verifier,input.version);
     })();
