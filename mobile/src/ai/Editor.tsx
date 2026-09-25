@@ -246,16 +246,18 @@ export function AIEditor({
       closeLabel="收起 AI 面板"
       closeTestID="ai-close"
       returnFocus={openButton}
+      header={
+        <View style={s.between}>
+          <Text style={s.heading}>AI 帮你整理</Text>
+          <Button
+            title="收起"
+            compact
+            testID="ai-collapse"
+            onPress={() => setPanel(false)}
+          />
+        </View>
+      }
     >
-      <View style={s.between}>
-        <Text style={s.heading}>AI 帮你整理</Text>
-        <Button
-          title="收起"
-          compact
-          testID="ai-collapse"
-          onPress={() => setPanel(false)}
-        />
-      </View>
       <ScrollView
         showsVerticalScrollIndicator={false}
         alwaysBounceVertical={false}
