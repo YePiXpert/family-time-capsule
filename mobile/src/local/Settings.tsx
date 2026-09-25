@@ -684,7 +684,11 @@ function useBackupActions() {
     }
     Alert.alert(
       title,
-      `会换成这份备份里的 ${librarySummary(inside)}；现在的内容会先备份一份。`,
+      `会换成这份备份里的 ${librarySummary(inside)}；现在的内容会先备份一份。` +
+        // 家人同步的三方合并里较新的一版会赢：恢复一份旧备份不能用来撤销已经同步过的改动。
+        (sync.joined
+          ? "\n\n这台手机已加入家庭：下次同步时，备份之后家里（包括这台手机）同步过的改动会并回来。"
+          : ""),
       [
         {
           text: "取消",
