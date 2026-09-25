@@ -11,6 +11,7 @@ import {
 import {
   editorContext,
   checkEditorResult,
+  fromEditorIds,
   applyYearPicks,
   askContext,
   questionContext,
@@ -346,16 +347,18 @@ const editorResult = () => ({
     { month: "2026-10", picks: ["r3"], quote: { recordId: "r3", text: "窗边有风。" } },
   ], notes: "每月选一段。",
 });
+const randomId = (i: number) => `0000${i}`.slice(-4) + "-9d2c-4f8e-8a51-0c3b7e5d1f20";
 describe("editor context privacy and limits", () => {
   it("projects only this year's allowed text fields and booleans in local date order", () => {
     const { library } = fixture();
     const records = [editorRecord("r2", { by: "爸爸", quote: true, first: true, mediaIds: ["a"] }),
       editorRecord("r1", { date: "2026-01-01T12:00:00", title: "题".repeat(110) }),
       editorRecord("old", { date: "2025-12-30T12:00:00", text: "OTHER_YEAR_SECRET" })];
-    const context = editorContext("2026", records, library.media);
+    const { context, ids } = editorContext("2026", records, library.media);
     const parsed = JSON.parse(context);
     expect(Object.keys(parsed).sort()).toEqual(["records", "year"]);
-    expect(parsed.records.map((r: { id: string }) => r.id)).toEqual(["r1", "r2"]);
+    expect(parsed.records.map((r: { id: string }) => r.id)).toEqual(["1", "2"]);
+    expect(ids).toEqual(["r1", "r2"]);
     expect(parsed.records[0].date).toBe("2026-01-01");
     expect(parsed.records[0].title).toHaveLength(100);
     expect(parsed.records[0].photos).toBe(false);
@@ -368,22 +371,60 @@ describe("editor context privacy and limits", () => {
   });
   it("caps at the newest 400 records, preserving ascending date order", () => {
     const records = Array.from({ length: 401 }, (_, i) => editorRecord(`r${String(i).padStart(3, "0")}`, { text: "", title: "" }));
-    const parsed = JSON.parse(editorContext("2026", records.reverse(), {}));
+    const { context, ids } = editorContext("2026", records.reverse(), {}), parsed = JSON.parse(context);
     expect(parsed.records).toHaveLength(400);
-    expect(parsed.records[0].id).toBe("r001");
-    expect(parsed.records[399].id).toBe("r400");
+    expect(parsed.records[0].id).toBe("1");
+    expect(parsed.records[399].id).toBe("400");
+    expect(ids[0]).toBe("r001");
+    expect(ids[399]).toBe("r400");
   });
   it.each([[1, 4000], [20, 1500], [50, 600], [100, 200]])("clips %i long records to %i characters including the ellipsis", (count, limit) => {
     const records = Array.from({ length: count }, (_, i) => editorRecord(`r${i}`, { text: "字".repeat(5000) }));
-    const context = editorContext("2026", records, {}), parsed = JSON.parse(context);
+    const { context } = editorContext("2026", records, {}), parsed = JSON.parse(context);
     expect(context.length).toBeLessThanOrEqual(60000);
     expect(parsed.records[0].text).toBe("字".repeat(limit - 1) + "…");
     expect(records[0]!.text).toHaveLength(5000);
   });
+  it("fits a full year of 400 long records with long titles and signatures in the last step", () => {
+    const records = Array.from({ length: 400 }, (_, i) => editorRecord(randomId(i), {
+      by: "落".repeat(20), title: "题".repeat(100), text: "字".repeat(5000), first: true, quote: true,
+    }));
+    const { context, ids } = editorContext("2026", records, {}), parsed = JSON.parse(context);
+    expect(context.length).toBeLessThanOrEqual(60000);
+    expect(parsed.records).toHaveLength(400);
+    expect(parsed.records[0]).toMatchObject({ title: "题".repeat(20), text: "", by: "落".repeat(20) });
+    expect(new Set(ids).size).toBe(400);
+  });
   it("counts JSON escape bytes as characters and reports a remaining overflow", () => {
-    const records = Array.from({ length: 400 }, (_, i) => editorRecord(`r${i}`, { text: "\n".repeat(4000) }));
+    const records = Array.from({ length: 400 }, (_, i) => editorRecord(`r${i}`, { by: "\"".repeat(20), title: "\"".repeat(100), text: "\n".repeat(4000) }));
     expect(() => editorContext("2026", records, {})).toThrow(new AIError("INVALID_INPUT", "这一年的记录太多，AI 暂时帮不了。"));
     expect(() => editorContext("2025", editorRecords(), {})).toThrow(AIError);
+  });
+});
+describe("editor numbered ids", () => {
+  const ids = ["r1", "r2", "r3"];
+  const numbered = () => ({
+    ...editorResult(),
+    chapters: [
+      { month: "2026-09", picks: ["1", "2"], quote: { recordId: "1", text: "窗边有风。" } },
+      { month: "2026-10", picks: ["3"] },
+    ],
+  });
+  it("maps the numbers the editor saw back to record ids", () => {
+    const picks = checkEditorResult(fromEditorIds(numbered(), ids), "2026", editorRecords());
+    expect(picks.months["2026-09"]).toEqual({ recordIds: ["r1", "r2"], quote: { recordId: "r1", text: "窗边有风。" } });
+    expect(picks.months["2026-10"]).toEqual({ recordIds: ["r3"] });
+  });
+  it.each([["4"], ["0"], ["01"], ["r1"], [""]])("rejects %j, which was never sent", (id) => {
+    const result = numbered();
+    result.chapters[1]!.picks = [id];
+    expect(() => checkEditorResult(fromEditorIds(result, ids), "2026", editorRecords())).toThrow(AIError);
+    const quoted = numbered();
+    quoted.chapters[0]!.quote = { recordId: id, text: "窗边有风。" };
+    expect(() => checkEditorResult(fromEditorIds(quoted, ids), "2026", editorRecords())).toThrow(AIError);
+  });
+  it.each([null, "x", { chapters: "x" }, { chapters: [null, 3, { picks: [1] }] }])("hands back %j for the contract check", (value) => {
+    expect(() => checkEditorResult(fromEditorIds(value, ids), "2026", editorRecords())).toThrow(AIError);
   });
 });
 describe("editor result contract", () => {

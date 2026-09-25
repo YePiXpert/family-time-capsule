@@ -132,10 +132,10 @@ describe("views", () => {
 
       // AI 上下文
       const y400 = [...yearRecords];
-      // editorContext 在正文较长的年份会走完 4000/1500/600/200 四档仍超 60000 字而抛错：分别量成功与失败两条路。
+      // editorContext 逐档收紧正文与标题，最后一档一年 400 条也放得下；抛错只剩人为的极端转义。
       const tryContext = (records: typeof y400) => {
         try {
-          return editorContext(year, records, state.media).length;
+          return editorContext(year, records, state.media).context.length;
         } catch {
           return -1;
         }
