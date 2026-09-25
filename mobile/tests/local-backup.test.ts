@@ -626,7 +626,7 @@ it("retains the native share receipt on a failed write and safely retries", asyn
   env.database!.exec(
     "CREATE TRIGGER reject_share BEFORE UPDATE ON root BEGIN SELECT RAISE(ABORT, 'disk full'); END;",
   );
-  await expect(receiveShares(store)).rejects.toThrow("disk full");
+  await expect(receiveShares(store)).rejects.toThrow("本机空间不足");
   expect(env.acknowledged).toEqual([]);
   expect(Object.values(store.get().drafts)).toEqual([]);
   env.database!.exec("DROP TRIGGER reject_share");
