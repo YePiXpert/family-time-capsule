@@ -6,6 +6,7 @@ import { loadAIConfig, readAIKey } from './ai-config.ts';
 import { cpaTranscriber, ffmpegTranscoder } from './transcribe.ts';
 import { createApp } from './app.ts';
 import { BackupStore } from './backup-store.ts';
+import { shutdown } from './shutdown.ts';
 const content=loadAIConfig('AI'),transcribe=loadAIConfig('TRANSCRIBE');
 const file=process.env.DB_FILE??'/data/ai.sqlite';
 mkdirSync(dirname(file),{recursive:true});
@@ -17,4 +18,5 @@ const migrated=backups.migrateMemberSpaces();if(migrated.members||migrated.faile
 const app=createApp(store,textProvider(content),process.env.SOURCE_SHA??'dev',backups,{transcoder:ffmpegTranscoder({ffmpegPath:process.env.FFMPEG_PATH}),transcriber:cpaTranscriber(transcribe.baseUrl,transcribe.keyFile,transcribe.model,()=>readAIKey(transcribe)),model:transcribe.model});
 await app.listen({host:'0.0.0.0',port:Number(process.env.PORT??3000)});
 console.info('Anan AI service listening');
-for(const signal of ['SIGTERM','SIGINT'])process.on(signal,()=>{void app.close().then(()=>{store.close();process.exit(0);});});
+let stopping=false;
+for(const signal of ['SIGTERM','SIGINT'])process.on(signal,()=>{if(stopping)return;stopping=true;void shutdown(app,store).then(()=>process.exit(0),()=>process.exit(1));});

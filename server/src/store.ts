@@ -57,6 +57,10 @@ export class Store {
       CREATE TABLE IF NOT EXISTS family(id INTEGER PRIMARY KEY CHECK(id=1),family_id TEXT NOT NULL,key_id TEXT NOT NULL,recovery_envelope TEXT NOT NULL,recovery_verifier TEXT NOT NULL,recovery_version INTEGER NOT NULL,created_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS pair_requests(id TEXT PRIMARY KEY,device_id TEXT NOT NULL UNIQUE,public_key TEXT NOT NULL,device_name TEXT NOT NULL,claim_hash TEXT NOT NULL,status TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL,member_id TEXT,approved_by TEXT,enc TEXT,ct TEXT,binding_json TEXT);
       CREATE TABLE IF NOT EXISTS activation_codes(code_hash TEXT PRIMARY KEY,expires_at INTEGER NOT NULL,used_at INTEGER);
+      CREATE INDEX IF NOT EXISTS requests_processing ON requests(status) WHERE status='processing';
+      CREATE INDEX IF NOT EXISTS requests_member_created ON requests(member_id,created_at);
+      CREATE INDEX IF NOT EXISTS requests_created ON requests(created_at);
+      CREATE INDEX IF NOT EXISTS pair_requests_status ON pair_requests(status,expires_at);
     `);
     // 旧库补上账号列（唯一索引用部分索引，多个 NULL 不冲突）。
     const columns=this.db.prepare('PRAGMA table_info(members)').all() as {name:string}[];
@@ -177,6 +181,8 @@ export class Store {
   }
   private expirePairs(now: number) {
     this.db.prepare("UPDATE pair_requests SET status='expired',enc=NULL,ct=NULL WHERE status='pending' AND expires_at<?").run(now);
+    // 匿名接口攒下的已结束申请只留一周，否则每次配对都要扫一遍全部历史。
+    this.db.prepare("DELETE FROM pair_requests WHERE status IN ('expired','cancelled') AND expires_at<?").run(now-7*24*60*60*1000);
     // 批准了却一直没确认的：设备作废，申请也收掉。
     const stale=this.db.prepare("SELECT p.id,p.device_id FROM pair_requests p JOIN devices d ON d.id=p.device_id WHERE p.status='approved' AND d.pending_until<?").all(now) as {id:string;device_id:string}[];
     for(const row of stale){this.db.prepare('UPDATE devices SET revoked=1 WHERE id=?').run(row.device_id);this.db.prepare("UPDATE pair_requests SET status='expired',enc=NULL,ct=NULL WHERE id=?").run(row.id);}
@@ -279,7 +285,8 @@ export class Store {
   auth(token: string, now=Date.now()): Member {
     const row = this.db.prepare('SELECT m.id,m.name,m.role,m.enabled,m.photo_limit,m.write_limit,m.backup_limit_bytes,d.id AS deviceId,d.last_used_at,d.created_at,d.pending_until FROM devices d JOIN members m ON m.id=d.member_id WHERE d.token_hash=? AND d.revoked=0 AND m.enabled=1').get(digest(token)) as (Member&{last_used_at:number|null;created_at:number;pending_until:number|null})|undefined;
     if (!row||(row.pending_until!==null&&row.pending_until<now)||(row.last_used_at??row.created_at)<now-DEVICE_IDLE_MS) throw new Problem(401,'AUTH_REQUIRED','这台手机还没获准，或已被停用；请让管理者扫码加入。');
-    if ((row.last_used_at??0)<now-TOUCH_MS) this.db.prepare('UPDATE devices SET last_used_at=? WHERE id=?').run(now,row.deviceId);
+    // 只是记账：磁盘满或库被锁时不能让只读请求（下载、恢复）跟着失败，下次请求再记。
+    if ((row.last_used_at??0)<now-TOUCH_MS) try { this.db.prepare('UPDATE devices SET last_used_at=? WHERE id=?').run(now,row.deviceId); } catch { /* 下次再记 */ }
     const { last_used_at: _used, created_at: _created, pending_until: _pending, ...member } = row;
     return member;
   }
@@ -381,8 +388,10 @@ export class Store {
     return updatedAt;
   }
   private manifestRows(where='',...params:unknown[]): BackupManifest[] {
-    const rows=this.db.prepare(`SELECT m.device_id,m.member_id,m.key_id,m.index_b64,m.updated_at,m.objects_json,d.name AS device_name FROM backup_manifests_v2 m LEFT JOIN devices d ON d.id=m.device_id ${where} ORDER BY m.updated_at DESC`).all(...params) as {device_id:string;member_id:string;key_id:string;index_b64:string;updated_at:number;objects_json:string|null;device_name:string|null}[];
-    return rows.map(row=>({deviceId:row.device_id,memberId:row.member_id,deviceName:row.device_name,keyId:row.key_id,index:row.index_b64,updatedAt:row.updated_at,objects:row.objects_json?JSON.parse(row.objects_json) as string[]:[]}));
+    const rows=this.db.prepare(`SELECT m.device_id,m.member_id,m.key_id,m.index_b64,m.updated_at,d.name AS device_name FROM backup_manifests_v2 m LEFT JOIN devices d ON d.id=m.device_id ${where} ORDER BY m.updated_at DESC`).all(...params) as {device_id:string;member_id:string;key_id:string;index_b64:string;updated_at:number;device_name:string|null}[];
+    const objectsOf=this.db.prepare('SELECT objects_json FROM backup_manifests_v2 WHERE device_id=?').pluck();
+    // 登记的对象只有 prune 与测试要；列清单的接口不再每次解析几 MB 的 JSON。
+    return rows.map(row=>{let objects:string[]|undefined;return {deviceId:row.device_id,memberId:row.member_id,deviceName:row.device_name,keyId:row.key_id,index:row.index_b64,updatedAt:row.updated_at,get objects(){if(!objects){const json=objectsOf.get(row.device_id) as string|null|undefined;objects=json?JSON.parse(json) as string[]:[];}return objects;}};});
   }
   /** 全部设备的清单，新的在前。 */
   manifests(): BackupManifest[] { return this.manifestRows(); }
@@ -395,7 +404,7 @@ export class Store {
   manifestOf(deviceId:string): BackupManifest|undefined { return this.manifestRows('WHERE m.device_id=?',deviceId)[0]; }
   /** 成员名下最新的一份（含旧版迁来的）：给 Build 71 的 GET /backup/manifest 用。 */
   latestManifestOf(memberId:string): BackupManifest|undefined { return this.manifestRows('WHERE m.member_id=?',memberId)[0]; }
-  latestManifest(): BackupManifest|undefined { return this.manifestRows()[0]; }
+  latestManifest(): BackupManifest|undefined { return this.manifestRows('WHERE m.device_id=(SELECT device_id FROM backup_manifests_v2 ORDER BY updated_at DESC LIMIT 1)')[0]; }
   /** 全部清单登记的对象并集：prune 的保护名单。 */
   manifestObjects(): Set<string> {
     const keep=new Set<string>();
@@ -424,7 +433,7 @@ export class Store {
   }
   claimedObjects(now=Date.now()): Set<string> {
     this.expireObjectClaims(now);
-    return new Set((this.db.prepare('SELECT DISTINCT object_id FROM backup_object_claims').all() as {object_id:string}[]).map(row=>row.object_id));
+    return new Set(this.db.prepare('SELECT object_id FROM backup_object_claims').pluck().all() as string[]);
   }
   clearObjectClaims() { this.db.prepare('DELETE FROM backup_object_claims').run(); }
   manifestCount(): number { return (this.db.prepare('SELECT COUNT(*) n FROM backup_manifests_v2').get() as {n:number}).n; }

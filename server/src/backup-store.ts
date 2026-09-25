@@ -119,6 +119,8 @@ export class BackupStore {
     } catch (e) {
       out.destroy();
       rmSync(temp, { force: true });
+      const code = (e as NodeJS.ErrnoException).code;
+      if (code === 'ENOSPC' || code === 'EDQUOT') throw new Problem(507, 'SERVER_FULL', '服务器空间不足，请联系管理者。');
       throw e;
     }
   }
@@ -137,23 +139,26 @@ export class BackupStore {
     }
     return { stream: createReadStream('', { fd }), size: s.size };
   }
-  /** 全部对象：id、字节、最后修改时间；目录不存在就是空库。 */
-  list(): { id: string; bytes: number; mtimeMs: number }[] {
+  /** 按目录名走一遍对象，只对 want(id) 为真的取 stat；目录不存在就是空库。 */
+  private walk(want: (id: string) => boolean, visit: (id: string, bytes: number, mtimeMs: number) => void) {
     const dir = this.spaceDir();
-    const rows: { id: string; bytes: number; mtimeMs: number }[] = [];
     let prefixes: string[];
-    try { prefixes = readdirSync(dir); } catch { return rows; }
+    try { prefixes = readdirSync(dir); } catch { return; }
     for (const prefix of prefixes) {
       let names: string[];
       try { names = readdirSync(join(dir, prefix)); } catch { continue; }
       for (const name of names) {
-        if (!OBJECT_ID.test(name) || PREFIX(name) !== prefix) continue;
-        try {
-          const s = statSync(join(dir, prefix, name));
-          if (s.isFile()) rows.push({ id: name, bytes: s.size, mtimeMs: s.mtimeMs });
-        } catch { /* 并发删除：跳过 */ }
+        if (!OBJECT_ID.test(name) || PREFIX(name) !== prefix || !want(name)) continue;
+        let s;
+        try { s = statSync(join(dir, prefix, name)); } catch { continue; /* 并发删除：跳过 */ }
+        if (s.isFile()) visit(name, s.size, s.mtimeMs);
       }
     }
+  }
+  /** 全部对象：id、字节、最后修改时间；目录不存在就是空库。 */
+  list(): { id: string; bytes: number; mtimeMs: number }[] {
+    const rows: { id: string; bytes: number; mtimeMs: number }[] = [];
+    this.walk(() => true, (id, bytes, mtimeMs) => rows.push({ id, bytes, mtimeMs }));
     return rows;
   }
   usage(): { objects: number; bytes: number } {
@@ -177,13 +182,14 @@ export class BackupStore {
   prune(keep: Set<string>, now = Date.now(), graceMs = 3600000): { removed: number; bytes: number } {
     this.refreshUsage();
     let removed = 0, bytes = 0;
-    for (const row of this.list()) {
-      if (keep.has(row.id) || row.mtimeMs > now - graceMs) continue;
-      try { rmSync(this.objectPath(row.id)); } catch (e) { this.recount(); throw e; }
+    // 保护名单里的几万个对象不取 stat；prune 是同步的，每次发布之后都跑，会卡住事件循环。
+    this.walk((id) => !keep.has(id), (id, size, mtimeMs) => {
+      if (mtimeMs > now - graceMs) return;
+      try { rmSync(this.objectPath(id)); } catch (e) { this.recount(); throw e; }
       this.totals.objects--;
-      this.totals.bytes -= row.bytes;
-      removed++; bytes += row.bytes;
-    }
+      this.totals.bytes -= size;
+      removed++; bytes += size;
+    });
     return { removed, bytes };
   }
   /** 清空整个家庭空间及上传占位：只给主人，且先删清单再来（见路由）。 */
