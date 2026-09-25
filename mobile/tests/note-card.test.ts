@@ -71,7 +71,7 @@ function find(
   if (!isValidElement<Control>(node)) return;
   return matches(node.props) ? node.props : find(node.props.children, matches);
 }
-function setup() {
+function setup(typedFirst?: string) {
   let resolve!: (text: string) => void;
   const generate = vi.fn((_signal?: AbortSignal) =>
     new Promise<string>((done) => {
@@ -94,6 +94,7 @@ function setup() {
     find(render(), (p) => p.testID === `note-${id}`)!;
   const cancel = () => find(render(), (p) => p.title === "取消")!;
   control("edit").onPress!();
+  if (typedFirst !== undefined) control("input").onChangeText!(typedFirst);
   control("assist").onPress!();
   const complete = async () => {
     resolve("AI 的草稿");
@@ -133,6 +134,22 @@ it("uses the AI version only after explicit acceptance if the draft changed", as
 });
 it("fills an unchanged draft directly", async () => {
   const p = setup();
+  await p.complete();
+  expect(p.control("input").value).toBe("AI 的草稿");
+  expect(hooks.alert).not.toHaveBeenCalled();
+});
+it("asks before replacing words typed but not saved before tapping AI", async () => {
+  const p = setup("还没保存的一段");
+  await p.complete();
+  expect(p.control("input").value).toBe("还没保存的一段");
+  expect(hooks.alert).toHaveBeenCalledOnce();
+  expect(hooks.alert.mock.calls[0]![1]).toContain("还没保存");
+  const buttons = hooks.alert.mock.calls[0]![2];
+  buttons.find((b: { text: string }) => b.text === "保留我写的").onPress?.();
+  expect(p.control("input").value).toBe("还没保存的一段");
+});
+it("fills an emptied draft directly", async () => {
+  const p = setup("");
   await p.complete();
   expect(p.control("input").value).toBe("AI 的草稿");
   expect(hooks.alert).not.toHaveBeenCalled();

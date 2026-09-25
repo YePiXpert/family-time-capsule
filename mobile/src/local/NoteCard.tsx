@@ -83,19 +83,29 @@ export function NoteCard({
       .generate(controller.signal)
       .then((text) => {
         if (!active()) return;
-        if (draftRef.current === snapshot) {
+        // 框里还是存好的那段（或空着）才直接填：取消能回到存好的寄语，没有字会丢。
+        // 点起草前刚写、还没保存的字，和等待时改的一样，先问再换。
+        const unsaved =
+          draftRef.current.trim() !== "" && draftRef.current !== note;
+        if (draftRef.current === snapshot && !unsaved) {
           updateDraft(text);
           return;
         }
-        Alert.alert("寄语有了新内容", "你在等待时改了寄语，要用哪一版？", [
-          { text: "保留我写的", style: "cancel" },
-          {
-            text: "用 AI 这版",
-            onPress: () => {
-              if (active()) updateDraft(text);
+        Alert.alert(
+          "寄语有了新内容",
+          draftRef.current === snapshot
+            ? "框里有你刚写、还没保存的字，要换成 AI 这版吗？"
+            : "你在等待时改了寄语，要用哪一版？",
+          [
+            { text: "保留我写的", style: "cancel" },
+            {
+              text: "用 AI 这版",
+              onPress: () => {
+                if (active()) updateDraft(text);
+              },
             },
-          },
-        ]);
+          ],
+        );
       })
       .catch((e) => {
         if (active()) setError(messageOf(e));

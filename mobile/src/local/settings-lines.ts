@@ -26,5 +26,5 @@ export function backupLine(exportedDays: number | null, bytes: number): string {
       : exportedDays === 0
         ? "今天保存过完整备份"
         : `上次完整备份 ${exportedDays} 天前`;
-  return `${last} · 本机 ${(bytes / 1048576).toFixed(1)} MB`;
+  return `${last} · 本机 ${(bytes / 1048576).toFixed(1)}\u00a0MB`;
 }

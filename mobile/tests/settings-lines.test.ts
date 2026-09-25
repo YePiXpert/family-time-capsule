@@ -16,7 +16,7 @@ it("家庭与同步只用一套说法：没加入、已加入没同步、同步�
     expect(line).not.toMatch(/一起写|家庭与设备/);
 });
 it("数据与备份一行带上次完整备份与本机占用", () => {
-  expect(backupLine(null, 0)).toBe("还没保存过完整备份 · 本机 0.0 MB");
-  expect(backupLine(0, 1048576 * 3)).toBe("今天保存过完整备份 · 本机 3.0 MB");
-  expect(backupLine(12, 1048576 * 45.8)).toBe("上次完整备份 12 天前 · 本机 45.8 MB");
+  expect(backupLine(null, 0)).toBe("还没保存过完整备份 · 本机 0.0\u00a0MB");
+  expect(backupLine(0, 1048576 * 3)).toBe("今天保存过完整备份 · 本机 3.0\u00a0MB");
+  expect(backupLine(12, 1048576 * 45.8)).toBe("上次完整备份 12 天前 · 本机 45.8\u00a0MB");
 });
