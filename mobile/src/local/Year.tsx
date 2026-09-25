@@ -15,7 +15,8 @@ import {
   compareDates,
 } from "./model";
 import { useNav, type Props } from "./navigation";
-import { coverForRecords, Volume } from "./Shelf";
+import { coverForRecords } from "./ShelfCards";
+import { Volume } from "./Volume";
 import { NoteCard } from "./NoteCard";
 import { byCountsOf, byLine } from "./recap";
 import { yearBookInput, yearBookMonth } from "./yearbook";
