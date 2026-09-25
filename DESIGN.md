@@ -33,7 +33,7 @@
 
 ## 动效与转场
 
-纸面负责阅读，液态玻璃负责操作，转场连接两者。时长与弹簧集中在 `ui.tsx` 的 `MOTION`，是项目自定的起点，不是系统规格；依据与待测项见 [PLAN-IOS-MOTION](docs/plans/PLAN-IOS-MOTION.md)。
+纸面负责阅读，液态玻璃负责操作，转场连接两者。时长与弹簧集中在 `ui.tsx` 的 `MOTION`，是项目自定的起点，不是系统规格；依据见 [PLAN-IOS-MOTION](docs/history/plans/PLAN-IOS-MOTION.md)，真机待测项见 [验收清单](docs/ACCEPTANCE.md)。
 
 - 页面一律平台默认的层级推进（原生 push），写记录、写信同样留在栈里，不用原生 modal／formSheet：它们画在应用锁与多任务遮罩之上。不加整页淡入或第二套 Reanimated 进场。
 - iOS 只留左边缘侧滑返回，不开整屏返回，免得抢看原图、横向书架条与最近卡、正文拖选。侧滑与所有返回走编辑页现有的退出守卫，不另建状态机。

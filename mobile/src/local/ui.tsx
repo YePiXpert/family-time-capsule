@@ -118,7 +118,7 @@ export const paperPalette = {
 };
 export const serif = Platform.select({ ios: "Georgia", android: "serif" });
 /**
- * 动效起点（项目自定，不是 Apple 规格；见 docs/plans/PLAN-IOS-MOTION.md）。
+ * 动效起点（项目自定，不是 Apple 规格；见 docs/history/plans/PLAN-IOS-MOTION.md）。
  * 页面转场用平台默认，时长不可配也不在这里配；减少动态时这里的动画全部不播。
  */
 export const MOTION = {
