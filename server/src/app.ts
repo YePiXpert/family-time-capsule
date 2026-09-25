@@ -10,7 +10,7 @@ import { audioTooLong, type Transcoder, type Transcriber } from './transcribe.ts
 import type { Readable } from 'node:stream';
 export function createApp(store:Store,provider:Provider,version:string,backupStore:BackupStore,transcribe:{transcoder:Transcoder;transcriber:Transcriber;model?:string}) {
  // 全局关闭 Fastify 日志：请求体、响应体与异常对象都不交给 logger。
- const app=Fastify({logger:false,bodyLimit:15*1024*1024,requestTimeout:120000,connectionTimeout:125000});
+ const app=Fastify({logger:false,bodyLimit:1024*1024,requestTimeout:120000,connectionTimeout:125000});
  // 备份对象按八进制流透传：bodyLimit 管不到透传流，路由自己按 Content-Length 预检并落盘计数。
  app.addContentTypeParser('application/octet-stream',(_request,payload,done)=>done(null,payload));
  app.addContentTypeParser(/^audio\/(mp4|m4a|x-m4a)/,(_request,payload,done)=>done(null,payload));
@@ -27,7 +27,12 @@ export function createApp(store:Store,provider:Provider,version:string,backupSto
   if(status&&status>=400&&status<500) return reply.code(status).send({code:'INVALID_INPUT',message:status===415?'请求格式不受支持。':'请求内容无效，请重试。'});
   return reply.code(500).send({code:'INTERNAL',message:'服务暂时不可用，请稍后再试。'});
  });
- app.addHook('onSend',async (_request,reply)=>{reply.header('Cache-Control','no-store');reply.header('X-Content-Type-Options','nosniff');});
+ // 关停时正在处理的请求答完就断开 keep-alive：否则 close() 要等 72 秒空闲超时，docker stop 只给 10 秒。
+ let closing=false;app.addHook('preClose',async()=>{closing=true;});
+ app.addHook('onSend',async (_request,reply)=>{reply.header('Cache-Control','no-store');reply.header('X-Content-Type-Options','nosniff');if(closing)reply.header('Connection','close');});
+ // 设备接口先鉴权再解析请求体：匿名请求不能让服务把几 MiB 的 JSON 解析进堆。
+ const anonymous=new Set(['/healthz','/','/api/v1/status','/api/v1/family/activate','/api/v1/pair/requests','/api/v1/pair/requests/:id/collect','/api/v1/pair/requests/:id/cancel','/api/v1/recovery/claim']);
+ app.addHook('onRequest',async req=>{const url=req.routeOptions.url;if(url!==undefined&&!anonymous.has(url))auth(req.headers.authorization);});
  app.get('/healthz',async ()=>{store.db.prepare('SELECT 1').get();return {status:'ok',version};});
  app.get('/',async (_request,reply)=>reply.type('text/html; charset=utf-8').send('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>桉桉成长记</title><style>body{font:18px system-ui;max-width:600px;margin:15vh auto;padding:24px;background:#F7F8F5;color:#202923;line-height:1.8}h1{font-size:28px}</style><h1>桉桉成长记</h1><p>留住每一个值得记住的日子。</p><p>请在手机应用中记录。成长记录保存在家人的手机上；家人一起写时，这里只存加密后的内容。AI 只处理家人当次主动提交的文字或声音。</p></html>'));
  app.get('/api/v1/status',async ()=>({initialized:store.initialized(),family:!!store.family()}));
@@ -265,7 +270,7 @@ export function createApp(store:Store,provider:Provider,version:string,backupSto
   if(!found)throw new Problem(404,'NOT_FOUND','远端没有这一份。');
   return reply.type('application/octet-stream').header('Content-Length',String(found.size)).send(found.stream);
  });
- app.put('/api/v1/backup/manifest',async req=>{
+ app.put('/api/v1/backup/manifest',{bodyLimit:4*1024*1024},async req=>{
   const member=auth(req.headers.authorization);
   // 索引是手机封好的密文（≤ 64 KiB 明文），服务端只存 keyId 好让换错恢复码在下载前就判出来；
   // objects 是清单引用的对象 id，登记下来让 prune 护住它们（Build 70 的手机不传，视为没登记）。
@@ -289,7 +294,7 @@ export function createApp(store:Store,provider:Provider,version:string,backupSto
   store.deleteManifest(deviceId);
   return {ok:true,pruned:sweep()};
  });
- app.post('/api/v1/backup/prune',async req=>{
+ app.post('/api/v1/backup/prune',{bodyLimit:4*1024*1024},async req=>{
   auth(req.headers.authorization);
   const {keep}=z.object({keep:idList(50000)}).strict().parse(req.body);
   // 全家清单登记的对象由服务端自己护住；远端已有清单时空 keep 一定是客户端出错，宁可不收拾。
