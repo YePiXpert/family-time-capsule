@@ -960,6 +960,21 @@ describe("incremental validation", () => {
     // 除了那条干净的改动，其余每一条都必须真的被拒——否则这条测试是空的。
     expect(scoped === "ok").toBe(name === "clean edit");
   });
+  it("removing only drafts or selections skips the full check, and nothing else may point at them", async () => {
+    const s = fixture();
+    saveRecord(s, "draft", "r", date);
+    // saveRecord 删了草稿：整库仍有效，只验改动的结论与整库一致。
+    expect(() => validateLibrary(s)).not.toThrow();
+    expect(() =>
+      validateChange(s, { changed: [{ kind: "records", id: "r" }], removed: [{ kind: "drafts", id: "draft" }] }),
+    ).not.toThrow();
+    // 绊线：校验器里除了草稿／选材自己那一支，谁也不许读 s.drafts／s.selections，否则 LEAF_KINDS 就不成立。
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync(new URL("../src/local/model.ts", import.meta.url), "utf8");
+    const validators = source.slice(source.indexOf("const validBy ="), source.indexOf("export function validateLibrary("));
+    expect(validators.match(/s\.drafts\b/g)).toHaveLength(1);
+    expect(validators.match(/s\.selections\b/g)).toHaveLength(1);
+  });
   it("falls back to the full check whenever something was removed", () => {
     const s = fixture();
     saveRecord(s, "draft", "r", date);
