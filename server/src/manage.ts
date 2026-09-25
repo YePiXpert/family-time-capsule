@@ -9,7 +9,7 @@ try {
  if(process.argv[2]==='activation') {
   // 空服务开家庭的一次性激活码：24 小时内用一次；再运行一次，上一枚作废。
   const code=store.issueActivationCode();
-  console.log(`激活码（24 小时内有效，只能用一次）：${code}\n在管理者的手机上「我的 → 家庭与设备 → 开始一个家庭」输入。`);
+  console.log(`激活码（24 小时内有效，只能用一次）：${code}\n在管理者的手机上「设置 → 家庭与同步 → 开始一个家庭」输入。`);
  } else if(process.argv[2]==='promote') {
   // 最后一招：所有管理者手机与恢复码都没了，把一位家人升为管理者（他的手机本来就有钥匙）。
   const name=process.argv[3];if(!name)throw new Error('Usage: node src/manage.ts promote <家人称呼>');

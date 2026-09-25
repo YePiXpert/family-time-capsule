@@ -6,7 +6,7 @@
 若小体积就被非 JSON 的 413 拦下，是反代（nginx 默认 1 MB）在拦：加 client_max_body_size 16m; proxy_request_buffering off; proxy_read_timeout 130s; 后重探。
 """
 import argparse,hashlib,json,os,subprocess,sys,urllib.error,urllib.request
-p=argparse.ArgumentParser();p.add_argument('--base',default='https://capsule.yep.li/api/v1');p.add_argument('--authenticated',action='store_true')
+p=argparse.ArgumentParser();p.add_argument('--base',required=True,help='服务的 API 前缀，形如 https://<服务地址>/api/v1；取私有配置，不写进仓库');p.add_argument('--authenticated',action='store_true')
 p.add_argument('--mb',type=float,nargs='+',default=[4,9]);p.add_argument('--container',help='本机 docker 容器名：结束后撤销这台探测设备');args=p.parse_args()
 def request(path,data=None,token=None,method=None,headers=None):
  h=dict(headers or {})

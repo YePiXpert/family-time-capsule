@@ -22,7 +22,7 @@ export function createApp(store:Store,provider:Provider,version:string,backupSto
   if(err instanceof Problem) return reply.code(err.status).send({code:err.code,message:err.message});
   if(err instanceof ZodError) return reply.code(400).send({code:'INVALID_INPUT',message:'输入内容无效，请检查后重试。'});
   const status=(err as {statusCode?:number}).statusCode;
-  if(status===413) return reply.code(413).send({code:'TOO_LARGE',message:'照片批次过大，请减少照片后重试。'});
+  if(status===413) return reply.code(413).send({code:'TOO_LARGE',message:'请求内容太大，请更新应用后重试。'});
   // Fastify 自己判出的客户端错误（长度对不上、JSON 坏了、内容类型不认识）也按 4xx 回，不伪装成服务故障。
   if(status&&status>=400&&status<500) return reply.code(status).send({code:'INVALID_INPUT',message:status===415?'请求格式不受支持。':'请求内容无效，请重试。'});
   return reply.code(500).send({code:'INTERNAL',message:'服务暂时不可用，请稍后再试。'});

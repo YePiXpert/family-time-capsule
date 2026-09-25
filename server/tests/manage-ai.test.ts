@@ -47,10 +47,12 @@ test('AI status prints only controls and daily usage, including disabled members
  insert.run(member.id,'success','private-fingerprint',today,0,1,'model','completed',Date.now(),7,null);
  assert.equal(manageAI(store,['status']),[
   'AI：已暂停',
-  '全家每日上限：文案 42 次，照片 123 张；今日文案 1 次，调用 2 次。',
-  '「爸爸」：管理者，已启用；每日文案 20 次，照片 100 张；今日文案 0 次，调用 0 次。',
-  '「妈妈」：家人，已停用；每日文案 8 次，照片 37 张；今日文案 1 次，调用 2 次。',
-  '每日 UTC 00:00 重置；失败不占文案／照片额度，但计入调用次数（每人 200 次／全家 1000 次）。',
+  '全家每日上限：文案 42 次；今日文案 1 次，调用 2 次。',
+  '「爸爸」：管理者，已启用；每日文案 20 次；今日文案 0 次，调用 0 次。',
+  '「妈妈」：家人，已停用；每日文案 8 次；今日文案 1 次，调用 2 次。',
+  '每日 UTC 00:00 重置；失败不占文案额度，但计入调用次数（每人 200 次／全家 1000 次）。',
  ].join('\n'));
+ // AI 不再收照片（1.0.3 起），状态里不再出现照片额度。
+ assert.ok(!manageAI(store,['status']).includes('照片'));
  assert.ok(!manageAI(store,['status']).includes(owner.token));
 });

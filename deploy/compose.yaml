@@ -5,7 +5,8 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:${APP_PORT:-3140}:3000"
-      - "10.66.66.2:${APP_PORT:-3140}:3000"
+      # 第二个监听地址（反代所在的私有网段）只写在私有 env 里，仓库不记真实值。
+      - "${APP_BIND:?Set APP_BIND}:${APP_PORT:-3140}:3000"
     environment:
       SOURCE_SHA: ${SOURCE_SHA}
       AI_MODEL: ${AI_MODEL:-gpt-6-astra}

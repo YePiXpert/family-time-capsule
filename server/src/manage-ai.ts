@@ -7,12 +7,12 @@ export function manageAI(store:Store,args:string[]):string {
   const settings=store.settings(),all=store.usage();
   return [
    `AI：${settings.paused?'已暂停':'已开启'}`,
-   `全家每日上限：文案 ${settings.globalWrites} 次，照片 ${settings.globalPhotos} 张；今日文案 ${all.writes} 次，调用 ${all.calls} 次。`,
+   `全家每日上限：文案 ${settings.globalWrites} 次；今日文案 ${all.writes} 次，调用 ${all.calls} 次。`,
    ...store.members().map(member=>{
     const today=store.usage(member.id);
-    return `「${member.name}」：${member.role==='admin'?'管理者':'家人'}，${member.enabled?'已启用':'已停用'}；每日文案 ${member.write_limit} 次，照片 ${member.photo_limit} 张；今日文案 ${today.writes} 次，调用 ${today.calls} 次。`;
+    return `「${member.name}」：${member.role==='admin'?'管理者':'家人'}，${member.enabled?'已启用':'已停用'}；每日文案 ${member.write_limit} 次；今日文案 ${today.writes} 次，调用 ${today.calls} 次。`;
    }),
-   '每日 UTC 00:00 重置；失败不占文案／照片额度，但计入调用次数（每人 200 次／全家 1000 次）。',
+   '每日 UTC 00:00 重置；失败不占文案额度，但计入调用次数（每人 200 次／全家 1000 次）。',
   ].join('\n');
  }
  if((command==='pause'||command==='resume')&&args.length===1) {
