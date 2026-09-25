@@ -214,6 +214,17 @@ final class NativeRegressionTests: XCTestCase {
         let sharedArchive = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "成长记归档-")).firstMatch
         XCTAssertTrue(sharedArchive.waitUntilExists(timeout: 300), "Archive share sheet never appeared")
         shot("archive-share-sheet"); assertNoFailure("Archive export")
+        // 截图巡看：之前没有原生截图的阅读页（搜索带键盘、扉页、宝宝资料、本机存储、看原图），只看不改。
+        relaunchApp()
+        tap("open-search"); XCTAssertTrue(element("page-back").waitUntilExists(timeout: 20)); sleep(1); shot("search-keyboard")
+        tap("page-back")
+        tap(labelled("的成长记"), "title page"); XCTAssertTrue(element("page-back").waitUntilExists(timeout: 20)); sleep(1); shot("title-page")
+        tap("page-back")
+        tap("open-settings"); tap("settings-profile"); XCTAssertTrue(element("page-back").waitUntilExists(timeout: 20)); sleep(1); shot("profile")
+        tap("page-back"); tap("settings-backup"); tap("storage-open"); XCTAssertTrue(element("page-back").waitUntilExists(timeout: 20)); sleep(1); shot("storage")
+        relaunchApp()
+        tap("volume-2026-09"); tap("record-fixture")
+        tap(labelled("点开看原图"), "record photo"); sleep(2); shot("media-viewer")
     }
     func testUnreadableLibraryRecoversFromLocalBackup() throws {
         XCTAssertTrue(element("本机资料暂时无法打开").waitUntilExists(timeout: 20)); shot("unreadable-library")
