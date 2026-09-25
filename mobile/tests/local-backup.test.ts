@@ -1467,3 +1467,24 @@ it("failed or stopped restores keep the other restore records and add none", asy
   expect(after).toHaveLength(3);
   expect(after).not.toContain(retained[0]);
 });
+it("keeps the pre-restore copy when the switch landed but a listener then threw", async () => {
+  const { store, backup } = await setup();
+  const out = await backup.createBackup(store.get());
+  await store.change((s) => { s.profile.name = "恢复前的名字"; });
+  const before = backup.listLocalBackups().length;
+  let armed = false;
+  const unsubscribe = store.subscribe(() => {
+    if (armed) { armed = false; throw new Error("listener blew up"); }
+  });
+  await expect(backup.restoreBackup(store, out, (stage) => {
+    if (stage.includes("写入本机资料")) armed = true;
+  })).rejects.toThrow("listener blew up");
+  unsubscribe();
+  // 库已经换成备份那份：「恢复前」是现在唯一留着旧内容的地方，不能删。
+  expect(store.get().profile.name).not.toBe("恢复前的名字");
+  const kept = backup.listLocalBackups();
+  expect(kept.length).toBe(before + 1);
+  const names = [];
+  for (const r of kept) names.push((await backup.inspectBackup(r.file)).profile.name);
+  expect(names).toContain("恢复前的名字");
+});

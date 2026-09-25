@@ -619,17 +619,20 @@ function useBackupActions() {
   const refreshList = () => setBackups(listLocalBackups());
   // 从恢复页回来时恢复记录可能多了一份（恢复前自动留的）：回到页面就重读。
   useFocusEffect(useCallback(() => setBackups(listLocalBackups()), []));
-  const perform = async (fn: () => Promise<void>) => {
+  /** 返回这一次有没有真的执行（同步或别的本机操作占着时不执行）。 */
+  const perform = async (fn: () => Promise<void>): Promise<boolean> => {
     // 确认框可能在同步开始前打开，真正执行时再检查一次。
     if (isSyncRunning()) {
       setMessage("正在与家人同步，等它完成再试。");
-      return;
+      return false;
     }
     if (isLocalBusy()) {
       setMessage("上一个操作还没结束，等它完成再试。");
-      return;
+      return false;
     }
     markLocalBusy(true);
+    // 上次导出留在缓存里给分享目标慢慢读的那一卷，到这时早读完了：先腾出空间再备份或恢复。
+    purgeExports();
     setBusy(true);
     setError("");
     setMessage("");
@@ -644,6 +647,7 @@ function useBackupActions() {
       setStopper(null);
       refreshList();
     }
+    return true;
   };
   const stoppable = () => {
     const controller = new AbortController();
@@ -714,6 +718,9 @@ function useBackupActions() {
               // 一起写的手机：下一轮把全家的清单重读一遍，把备份之后家人的改动并回来。
               await forgetMergeHistory();
               setMessage(done);
+            }).then((ran) => {
+              // 同步刚好开始、没执行：选择器复制进缓存的那份也不留着。
+              if (!ran) discardPickedCopies(files);
             });
           },
         },
