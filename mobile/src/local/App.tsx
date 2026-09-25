@@ -72,9 +72,10 @@ import {
   Settings,
   Profile,
   Appearance,
-  Signature,
   Storage,
   Backup,
+  Restore,
+  ReadableCopy,
 } from "./Settings";
 import { Editor } from "./Editor";
 import { RecordScreen } from "./Record";
@@ -329,7 +330,8 @@ function Root() {
           <Stack.Screen name="Storage" component={Storage} />
           <Stack.Screen name="Backup" component={Backup} />
           <Stack.Screen name="Appearance" component={Appearance} />
-          <Stack.Screen name="Signature" component={Signature} />
+          <Stack.Screen name="Restore" component={Restore} />
+          <Stack.Screen name="ReadableCopy" component={ReadableCopy} />
           <Stack.Screen name="LetterEditor" component={LetterEditor} />
           <Stack.Screen name="Letter" component={LetterScreen} />
           <Stack.Screen name="Quotes" component={Quotes} />

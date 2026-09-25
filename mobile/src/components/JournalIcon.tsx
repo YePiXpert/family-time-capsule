@@ -51,7 +51,7 @@ const paths: Record<JournalIconName, React.ReactNode> = {
     <Path d="m14.4 6.7 2.9 2.9" />
   </>,
   download: <Path d="M12 4v10.2M8 10.3l4 4 4-4M5 19.2h14" />,
-  // 收纳箱：备份与恢复（把时光收好，也从这里取回）。
+  // 收纳箱：数据与备份（把时光收好，也从这里取回）。
   archive: <>
     <Rect x={3.6} y={4.6} width={16.8} height={4.4} rx={1.2} />
     <Path d="M5.2 9v9.2c0 .7.6 1.3 1.3 1.3h11c.7 0 1.3-.6 1.3-1.3V9M10 12.6h4" />

@@ -125,7 +125,7 @@ export function AIEditor({
       const token = await getToken();
       if (abort.current.signal.aborted) return;
       if (!token) {
-        // 这台手机还没加入家庭：先收起面板，带去「家庭与设备」加入。
+        // 这台手机还没加入家庭：先收起面板，带去「家庭与同步」加入。
         setPanel(false);
         nav.navigate("Family");
         return;

@@ -48,7 +48,7 @@ it("sends the bearer token and the base path on every call, and never calls with
   );
   const error = await failure(() => anonymous.status());
   expect(error.code).toBe("AUTH_REQUIRED");
-  expect(error.message).toContain("家庭与设备");
+  expect(error.message).toContain("家庭与同步");
   expect(seen).toHaveLength(1);
 });
 it("me reads the calling device, returns null for missing or invalid fields, and uses shared errors", async () => {
@@ -70,7 +70,7 @@ it("me reads the calling device, returns null for missing or invalid fields, and
   answer = () => ({ status: 401, body: encode({ code: "AUTH_REQUIRED" }) });
   const error = await failure(() => transport().me());
   expect([error.code, error.status]).toEqual(["AUTH_REQUIRED", 401]);
-  expect(error.message).toContain("家庭与设备");
+  expect(error.message).toContain("家庭与同步");
 });
 it("uploads bytes as octet-stream with the ciphertext hash and reads created from 201", async () => {
   answer = (request) => ({

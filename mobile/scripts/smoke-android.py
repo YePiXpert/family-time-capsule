@@ -51,23 +51,23 @@ try:
     restart();tap_shelf('Letter for later');find('还没到日子')
     tap('letter-open-early');tap_last('拆开');find('Words kept for the future.');shot('letter-opened');letterSealed=True;phase('Letter')
     # 改分辨率后先等书架按新宽度画好再截图。
-    restart();adb('shell','wm','size','320x720');find('我的');shot('home-320')
-    tap('我的')
-    # 家庭与设备：没加入时「加入已有家庭／开始一个家庭／用恢复码找回」，不联网也打得开。
+    restart();adb('shell','wm','size','320x720');find('设置');shot('home-320')
+    tap('设置');find('settings-by');shot('settings-320')
+    # 家庭与同步：没加入时「加入已有家庭／开始一个家庭／用恢复码找回」，不联网也打得开。
     # 同步卡只在已加入时出现：没加入时这一页没有任何同步、上传入口。
-    tap('家庭与设备');find('family-out');find('family-join');find('family-recover')
+    tap('家庭与同步');find('family-out');find('family-join');find('family-recover')
     assert not any(n.get('resource-id') in ('remote-card','remote-backup','remote-first-sync') for n in hierarchy(fresh=True).iter('node')),'Signed-out family page must not offer sync'
     shot('family-out-320');familyOffline=True;remoteCardOffline=True;adb('shell','input','keyevent','4')
-    tap('外观设置');tap('深色');shot('dark-320')
+    tap('外观与隐私');tap('深色');shot('dark-320')
     # 备份页不再挂家人卡：同步只在「家庭与同步」。
-    restart();tap('我的');tap('备份与恢复');find('backup-export')
+    restart();tap('设置');tap('数据与备份');find('backup-export')
     assert not any(n.get('resource-id')=='remote-card' for n in hierarchy(fresh=True).iter('node')),'Backup page must not carry the sync card'
     shot('backup-offline');phase('Settings')
     # 备份闭环：导出 → 删一条记录 → 从本机保留的备份恢复 → 内容还原。
-    restart();tap('我的');tap('备份与恢复');tap('backup-export')
+    restart();tap('设置');tap('数据与备份');tap('backup-export')
     time.sleep(3);adb('shell','input','keyevent','4');time.sleep(1)  # 退出系统分享面板
-    # 开放归档：真写一份 zip 出来，必须在系统分享面板里看到 zip 文件名。
-    tap_seek('archive-export')
+    # 可阅读副本（开放归档）：真写一份 zip 出来，必须在系统分享面板里看到 zip 文件名。
+    tap('archive-open');tap('archive-export')
     deadline=time.monotonic()+300
     while time.monotonic()<deadline:
         tree=hierarchy(fresh=True)
@@ -81,7 +81,7 @@ try:
     restart();tap(f'volume-{month}')
     tree=hierarchy(); row=next(n for n in tree.iter('node') if n.get('resource-id','').startswith('record-'));tap(row.get('resource-id'))
     tap('删除记录');tap_last('删除记录')
-    restart();tap('我的');tap('备份与恢复');tap_seek('恢复这份备份');tap('恢复并替换')
+    restart();tap('设置');tap('数据与备份');tap('backup-restore-open');tap_seek('恢复这份备份');tap('恢复并替换')
     find('恢复完成。')
     restart();tap(f'volume-{month}')
     tree=hierarchy(); row=next(n for n in tree.iter('node') if n.get('resource-id','').startswith('record-'));tap(row.get('resource-id'))

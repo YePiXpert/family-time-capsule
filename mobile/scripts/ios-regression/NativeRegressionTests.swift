@@ -27,7 +27,7 @@ final class NativeRegressionTests: XCTestCase {
         let e = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in check() }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [e], timeout: timeout), .completed, description)
     }
-    /// 启动后先等本机库开完：书架页头的「我的」或开库失败页出现，才算应用起来了。
+    /// 启动后先等本机库开完：书架页头的「设置」圆章或开库失败页出现，才算应用起来了。
     /// 托管模拟器忙的时候，启动转圈能转四五十秒（run 35827094155 重跑那次，首个 20 秒断言就栽在转圈上）。
     /// 只给开库这一段放宽到 120 秒；进了书架之后每一步的等待照旧是 20 秒。
     private func launchApp() {
@@ -104,7 +104,7 @@ final class NativeRegressionTests: XCTestCase {
         XCTAssertTrue(element("editor-details").waitUntilExists(timeout: 20)); app.swipeUp(); shot("editor-details")
         tap("ai-open")
         XCTAssertTrue(element("ai-polish").waitUntilExists(timeout: 20)); shot("ai-panel")
-        // 没加入家庭时点润色：不弹同意框，直接带去「家庭与设备」。
+        // 没加入家庭时点润色：不弹同意框，直接带去「家庭与同步」。
         tap("ai-polish")
         XCTAssertTrue(element("family-out").waitUntilExists(timeout: 20)); shot("ai-enrollment-from-polish")
         // Opening the editor persists a draft. Discard this enrollment-only draft
@@ -161,7 +161,7 @@ final class NativeRegressionTests: XCTestCase {
         tap("letter-open-early"); tap("拆开")
         wait("Letter body did not appear") { self.app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Words kept for the future.")).firstMatch.exists }
         shot("letter-opened")
-        // 家庭与设备：没加入时三个入口，不联网也能打开；没有任何账号密码输入。
+        // 家庭与同步：没加入时三个入口，不联网也能打开；没有任何账号密码输入。
         relaunchApp(); tap("open-settings"); tap("settings-family")
         XCTAssertTrue(element("family-out").waitUntilExists(timeout: 20), "Family page should open offline")
         XCTAssertTrue(element("family-join").exists); XCTAssertTrue(element("family-start").exists); XCTAssertTrue(element("family-recover").exists)
@@ -193,19 +193,24 @@ final class NativeRegressionTests: XCTestCase {
         ).firstMatch
         XCTAssertTrue(sharedBook.waitUntilExists(timeout: 300), "Book PDF share sheet never appeared")
         shot("yearbook-pdf-share-sheet"); assertNoFailure("Yearbook PDF export")
-        relaunchApp(); tap("open-settings"); tap("备份与恢复")
+        relaunchApp(); tap("open-settings")
+        // 设置只剩四行：落款（原地展开）、家庭与同步、数据与备份、外观与隐私。
+        XCTAssertTrue(element("settings-by").waitUntilExists(timeout: 20), "Settings should carry the inline signature row")
+        XCTAssertTrue(element("settings-appearance").exists); shot("settings")
+        tap("settings-backup")
         // 备份页不再挂家人卡：同步只在「家庭与同步」。
         XCTAssertTrue(element("backup-export").waitUntilExists(timeout: 20), "Backup page missing")
         XCTAssertFalse(element("remote-card").exists, "Backup page must not carry the sync card")
-        tap("恢复这份备份"); tap("恢复并替换")
+        // 本机恢复记录在「恢复备份」里面。
+        tap("backup-restore-open"); tap("恢复这份备份"); tap("恢复并替换")
         wait("Restore did not finish") { self.app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "恢复完成")).firstMatch.exists }
         shot("backup-restored")
-        tap("backup-export")
+        tap("page-back"); tap("backup-export")
         // Export is complete before the OS share sheet opens; Python verifies the bytes.
         sleep(3); shot("backup-export-share-sheet")
-        // 开放归档：等系统分享面板里出现 zip 文件名；Python 再用 zipfile 校验缓存里那份。
-        relaunchApp(); tap("open-settings"); tap("备份与恢复")
-        tap("archive-export")
+        // 可阅读副本（开放归档）：等系统分享面板里出现 zip 文件名；Python 再用 zipfile 校验缓存里那份。
+        relaunchApp(); tap("open-settings"); tap("settings-backup")
+        tap("archive-open"); tap("archive-export")
         let sharedArchive = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "成长记归档-")).firstMatch
         XCTAssertTrue(sharedArchive.waitUntilExists(timeout: 300), "Archive share sheet never appeared")
         shot("archive-share-sheet"); assertNoFailure("Archive export")

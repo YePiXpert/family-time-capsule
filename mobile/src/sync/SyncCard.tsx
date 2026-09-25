@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Switch, View } from "react-native";
+import { StyleSheet, Switch, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { BackupStopped } from "../local/backup";
 import { useLibrary, useStore, useSyncStatus } from "../local/context";
@@ -41,7 +41,9 @@ export function SyncCard({ busy }: { busy: boolean }) {
     { colors } = useTheme();
   // useState 槽位：remote、progress、message、error、conflicts、localKeyId、status、statusError、savingAutoSync。
   // remote 为 undefined 表示还在读；null 表示这台手机还没开始同步。
-  const [remote, setRemote] = useState<RemoteState | null | undefined>(undefined),
+  const [remote, setRemote] = useState<RemoteState | null | undefined>(
+      undefined,
+    ),
     [progress, setProgress] = useState(""),
     [message, setMessage] = useState(""),
     [error, setError] = useState("");
@@ -150,8 +152,11 @@ export function SyncCard({ busy }: { busy: boolean }) {
           onProgress: setProgress,
           signal,
         });
-        const { pulled = 0, pushed = 0, conflicts = 0 } =
-          result.lastSyncSummary ?? {};
+        const {
+          pulled = 0,
+          pushed = 0,
+          conflicts = 0,
+        } = result.lastSyncSummary ?? {};
         const parts = [
           pulled > 0 ? `从家人那里并入 ${pulled} 处改动` : "",
           pushed > 0 ? `往远端新传 ${pushed} 份` : "",
@@ -275,7 +280,9 @@ export function SyncCard({ busy }: { busy: boolean }) {
         {!syncing && !!unreadNotice(remote.lastSyncSummary) && (
           <Text style={s.muted}>{unreadNotice(remote.lastSyncSummary)}</Text>
         )}
-        <ErrorText message={error || (!syncing ? remote.lastError : "") || ""} />
+        <ErrorText
+          message={error || (!syncing ? remote.lastError : "") || ""}
+        />
         {conflicts > 0 && (
           <View style={s.between}>
             <Text>{`有 ${conflicts} 段两台手机都改过`}</Text>
@@ -291,7 +298,9 @@ export function SyncCard({ busy }: { busy: boolean }) {
         {!!message && <Text accessibilityLiveRegion="polite">{message}</Text>}
         <View style={s.row}>
           <Button
-            title={progress || (sync.running && !running ? "正在同步…" : "现在同步")}
+            title={
+              progress || (sync.running && !running ? "正在同步…" : "现在同步")
+            }
             testID="remote-backup"
             disabled={busy || syncing}
             onPress={() => {
@@ -300,11 +309,21 @@ export function SyncCard({ busy }: { busy: boolean }) {
           />
           {stop}
         </View>
-        <View style={s.between}>
+        <View
+          style={[
+            s.between,
+            {
+              paddingTop: 12,
+              borderTopWidth: StyleSheet.hairlineWidth,
+              borderTopColor: colors.line,
+            },
+          ]}
+        >
           <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
             <Text>回到应用时自动同步</Text>
             <Text style={s.muted}>
-              回到应用、保存一段时光后 30 秒，自动与家人合一次。照片一起下，流量敏感时可以关掉，手动点「现在同步」照常。
+              回到应用、保存一段时光后 30
+              秒，自动与家人合一次。照片一起下，流量敏感时可以关掉，手动点「现在同步」照常。
             </Text>
           </View>
           <Switch
