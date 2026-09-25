@@ -484,8 +484,13 @@ function retagPersons(
   };
   const tagged = (c: { personIds?: readonly string[] }) =>
     !!c.personIds?.includes(personId);
+  // 记录带上世系：别的手机才认得这一版源自它手里那版，不出假冲突卡。
   for (const [id, record] of Object.entries(s.records))
-    if (tagged(record)) editEntity(s, "records", id, rewrite);
+    if (tagged(record))
+      editEntity(s, "records", id, (r) => {
+        r.ancestors = lineage(r);
+        rewrite(r);
+      });
   for (const [id, draft] of Object.entries(s.drafts))
     if (tagged(draft.content))
       editEntity(s, "drafts", id, (next) => {
@@ -595,6 +600,7 @@ export function patchRecord(
   const before = s.records[id];
   if (!before) return;
   editEntity(s, "records", id, (r) => {
+    r.ancestors = lineage(r);
     Object.assign(r, patch);
     r.revision++;
     r.updatedAt = now;

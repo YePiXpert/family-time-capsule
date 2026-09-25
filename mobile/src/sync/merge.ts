@@ -1,4 +1,4 @@
-import { contentHashOf, hashOf } from "../local/hash";
+import { contentHashOf, hashOf, lineage } from "../local/hash";
 import {
   TOMBSTONE_KINDS,
   deletePerson,
@@ -262,7 +262,11 @@ export function repairReferences(s: Library): void {
     (c.coverId !== null && !c.mediaIds.includes(c.coverId)) ||
     !(c.personIds ?? []).every(personOk);
   for (const [id, r] of Object.entries(s.records))
-    if (contentBroken(r)) editEntity(s, "records", id, fixContent);
+    if (contentBroken(r))
+      editEntity(s, "records", id, (record) => {
+        record.ancestors = lineage(record);
+        fixContent(record);
+      });
   for (const [id, d] of Object.entries(s.drafts))
     if (
       (d.recordId !== null && !s.records[d.recordId]) ||
@@ -335,6 +339,7 @@ export function repairReferences(s: Library): void {
       (l.coverId !== null && !l.mediaIds.includes(l.coverId))
     )
       editEntity(s, "letters", id, (letter) => {
+        letter.ancestors = lineage(letter);
         letter.mediaIds = letter.mediaIds.filter(mediaOk);
         if (
           letter.coverId !== null &&
