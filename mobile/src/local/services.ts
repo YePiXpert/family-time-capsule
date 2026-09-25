@@ -1,6 +1,6 @@
 import { lineage } from "./hash";
 import { randomUUID } from "expo-crypto";
-import { Paths } from "expo-file-system";
+import { File, Paths } from "expo-file-system";
 import { DOCS_DIR, LEGACY_DOCS_DIR } from "./brand";
 import {
   consumePendingNativeShares,
@@ -246,6 +246,7 @@ async function receiveOneShare(
   // 改名前排队的清单里记的还是旧目录的绝对路径；文件本身已随目录搬过去了。
   const legacyBase = `${documents}/${LEGACY_DOCS_DIR}/intake/originals/`;
   const media: LocalMedia[] = [];
+  const originals: string[] = [];
   const text: string[] = [];
   let skipped = 0;
   for (const item of manifest.items) {
@@ -282,7 +283,13 @@ async function receiveOneShare(
       const photo = shareItemPhotoMetadata(item);
       if (photo) preserved.photoMetadata = photo;
       media.push(preserved);
-    } catch {
+      originals.push(localUri);
+    } catch (e) {
+      // 空间不够是暂时的：整批不确认，腾出空间后下次启动重来；别的错才算这一项坏了。
+      if (outOfSpace(e)) {
+        for (const m of media) deleteMediaFiles(m);
+        throw new Error("本机空间不足，分享的内容还留着，清理一些空间后再打开应用。");
+      }
       skipped++;
     }
   }
@@ -291,9 +298,13 @@ async function receiveOneShare(
     await acknowledgeNativeShare(manifest.manifestId);
     return Math.max(skipped, 1);
   }
+  let duplicate = false;
   try {
     await store.change((s) => {
-      if (s.receivedShares.includes(manifest.manifestId)) return;
+      if (s.receivedShares.includes(manifest.manifestId)) {
+        duplicate = true;
+        return;
+      }
       const id = newId();
       const content = emptyContent();
       content.text = text.join("\n");
@@ -321,9 +332,22 @@ async function receiveOneShare(
     for (const m of media) deleteMediaFiles(m);
     throw e;
   }
+  // 另一轮接收已经收下了这一份：这一轮复制出来的文件没人引用。
+  if (duplicate) for (const m of media) deleteMediaFiles(m);
   await acknowledgeNativeShare(manifest.manifestId);
+  // 已复制进 media 并确认：收件箱里的原件没人再要。
+  for (const uri of originals)
+    try {
+      const f = new File(uri);
+      if (f.exists) f.delete();
+    } catch {
+      // 多占一份空间，不影响已保存的草稿。
+    }
   return skipped;
 }
+const outOfSpace = (e: unknown) =>
+  (!!e && typeof e === "object" && (e as { code?: unknown }).code === "ENOSPC") ||
+  /ENOSPC|no space left|空间不足/i.test(e instanceof Error ? e.message : String(e));
 export async function receiveShares(store: LocalStore): Promise<void> {
   const failed: string[] = [];
   let skipped = 0;

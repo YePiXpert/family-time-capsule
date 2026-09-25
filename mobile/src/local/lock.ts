@@ -25,3 +25,17 @@ export function unlockFailureMessage(error?: string): string {
     ? "这台手机的锁屏密码已关闭。到系统设置重新打开锁屏密码后，再点解锁。"
     : "没有解锁成功，再试一次。";
 }
+/**
+ * 验证一次：通过返回 null，否则返回要显示的提示。系统验证抛错（安卓拿不到界面、内部错误）
+ * 和验证不过一样，锁照旧：主人 2026-09-25 定了锁不自己放开。
+ */
+export async function attemptUnlock(
+  authenticate: () => Promise<{ success: boolean; error?: string }>,
+): Promise<string | null> {
+  try {
+    const result = await authenticate();
+    return result.success ? null : unlockFailureMessage(result.error);
+  } catch {
+    return unlockFailureMessage();
+  }
+}

@@ -99,7 +99,9 @@ export function daysSinceExport(
   const start = (d: Date) =>
     new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   // 两个本地零点相差的是整天数，但跨夏令时那天只有 23 小时：取整而不是向下取，免得少算一天。
-  return Math.round((start(today) - start(exported)) / 86400000);
+  const days = Math.round((start(today) - start(exported)) / 86400000);
+  // 时钟曾经拨快过：将来的日子不算数，当作没备份过，提醒照常出现。
+  return days < 0 ? null : days;
 }
 /** 应用内保留的备份，最新的在前。 */
 export function retainedBackups(): File[] {
@@ -439,7 +441,15 @@ export async function streamBlob(
   } finally {
     input.close();
   }
-  if (hash !== blob.sha256) throw new Error(`备份素材校验失败：${name}`);
+  if (hash !== blob.sha256) {
+    // 长度对、字节坏：留着它，ensureBlob 只看长度会一直信它。删掉，下一次备份从原件重建。
+    try {
+      stored.delete();
+    } catch {
+      // 删不掉下次再说。
+    }
+    throw new Error(`备份素材校验失败：${name}`);
+  }
 }
 /** 一份清单备份引用的 blob；读不出来返回 null，让回收知道该收手。 */
 export function manifestBlobs(file: File): BackupBlob[] | null {

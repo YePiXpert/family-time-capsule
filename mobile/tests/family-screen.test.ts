@@ -319,3 +319,21 @@ it("二维码矩阵：同一段文字稳定、放得下配对码", () => {
   expect(a[0]!.slice(0, 7).every(Boolean)).toBe(true);
   expect(a[6]!.slice(0, 7).every(Boolean)).toBe(true);
 });
+it("同一帧连点两下：第二下不接管，停止键仍能停住第一次", async () => {
+  let release = () => {};
+  let seen: AbortSignal | undefined;
+  env.share.mockImplementation((_s: unknown, _k: unknown, opts: { signal: AbortSignal }) => {
+    seen = opts.signal;
+    return new Promise((resolve) => { release = () => resolve({ lastSyncSummary: { devices: 1 } }); });
+  });
+  const tree = render({ kind: "approved", joined, recovered: false, readable: null });
+  const press = find(tree, "family-first-sync")!.props!.onPress!;
+  press();
+  press();
+  await vi.waitFor(() => expect(env.share).toHaveBeenCalledTimes(1));
+  expect(env.slots[ERROR]).toBe("");
+  expect(env.slots[2]).toBe(true);
+  release();
+  await vi.waitFor(() => expect(env.slots[SYNCED]).toBe(true));
+  expect(seen?.aborted).toBe(false);
+});

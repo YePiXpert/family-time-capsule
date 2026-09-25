@@ -127,6 +127,15 @@ function undecodable(e: unknown): boolean {
       !(e instanceof BackupStopped))
   );
 }
+function combineConflicts(earlier: readonly Conflict[], added: readonly Conflict[]): Conflict[] {
+  const conflicts = new Map<string, Conflict>();
+  for (const conflict of [...earlier, ...added]) {
+    const old = conflicts.get(conflict.key);
+    if (!old || Date.parse(old.at) <= Date.parse(conflict.at))
+      conflicts.set(conflict.key, conflict);
+  }
+  return [...conflicts.values()];
+}
 /** 准备文件不占写队列；最终合并一定用写队列里的新鲜资料。 */
 export async function runFamilySync(
   store: LocalStore,
@@ -254,6 +263,7 @@ async function syncFamily(
       prepared.set(m.id, await materialize(m, reserved, created, deps));
     }
     deps.onProgress?.("正在写入本机资料…");
+    const earlier = await readConflicts();
     await store.change((current) => {
       throwIfAborted(deps.signal);
       merged = mergeLibraries(current, snapshots, base, now);
@@ -263,6 +273,8 @@ async function syncFamily(
           throw new SyncError("INCOMPLETE", "资料刚有变化，请再同步一次。");
         merged.next.media[m.id] = ready;
       }
+      // 输的一版先落盘再换库：写不进去就不换，本机那一版原样留着；换库失败只多一张重复的卡。
+      if (merged.conflicts.length) writeConflicts(combineConflicts(earlier, merged.conflicts));
       Object.assign(current, merged.next);
     });
   } catch (e) {
@@ -279,13 +291,7 @@ async function syncFamily(
   for (const file of created)
     if (!used.has(file.name) && file.exists) file.delete();
   // 库已写好，先留住输的一版；上传失败后重试也不能把这段字忘掉。
-  const conflicts = new Map<string, Conflict>();
-  for (const conflict of [...(await readConflicts()), ...merged.conflicts]) {
-    const old = conflicts.get(conflict.key);
-    if (!old || Date.parse(old.at) <= Date.parse(conflict.at))
-      conflicts.set(conflict.key, conflict);
-  }
-  writeConflicts([...conflicts.values()]);
+  writeConflicts(combineConflicts(await readConflicts(), merged.conflicts));
   // 合并已落进本机库：基和已读清单也要跟上。否则上传失败后下一轮拿旧基再合一遍，
   // 本机改过的拉取内容会被当成两边都改而出假冲突卡，那几份清单也要重下。
   writeBase(merged.base);
