@@ -66,6 +66,8 @@ try:
     # 备份闭环：导出 → 删一条记录 → 从本机保留的备份恢复 → 内容还原。
     restart();tap('设置');tap('数据与备份');tap('backup-export')
     time.sleep(3);adb('shell','input','keyevent','4');time.sleep(1)  # 退出系统分享面板
+    # 分享面板关上不算存好：点「已存好」才记一次完整备份。
+    tap('backup-confirm-saved');find('记下了：今天保存过完整备份。');shot('backup-confirmed')
     # 可阅读副本（开放归档）：真写一份 zip 出来，必须在系统分享面板里看到 zip 文件名。
     tap('archive-open');tap('archive-export')
     deadline=time.monotonic()+300
