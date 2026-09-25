@@ -46,6 +46,9 @@ jobs:
           else
             test "$GITHUB_REF_TYPE" = "tag"
             [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
+            # 标签必须等于 app.json 的版本（后缀之前），免得 v1.2.0 里装的是 1.1.x。
+            APP_VERSION=$(python3 -c 'import json;print(json.load(open("mobile/app.json"))["expo"]["version"])')
+            test "${GITHUB_REF_NAME%%-*}" = "v$APP_VERSION" || { echo "Tag $GITHUB_REF_NAME does not match mobile/app.json version $APP_VERSION"; exit 1; }
           fi
           echo "sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
           echo "Package application source: $SOURCE_SHA" >> "$GITHUB_STEP_SUMMARY"
@@ -198,8 +201,12 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          # 密钥不存在时退回 runner 模板 debug 证书（本地试验场景）。
+          # 密钥不存在时退回 runner 模板 debug 证书（只限手动试验构建）；打标签发布必须用持有者的密钥。
           if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+              echo "Release key missing on a tag build; refusing to publish a debug-signed APK."
+              exit 1
+            fi
             echo "No release key configured; keeping the template debug signature."
             exit 0
           fi
@@ -232,7 +239,11 @@ jobs:
           echo "$CERT_REPORT"
           PINNED_DIGEST='certificate SHA-256 digest: fe5743e447780272340901fbed4df95f2a545e7778bff6852771dea352f4b17e'
           TEMPLATE_DIGEST='certificate SHA-256 digest: fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c'
-          echo "$CERT_REPORT" | grep -F "$PINNED_DIGEST" || echo "$CERT_REPORT" | grep -F "$TEMPLATE_DIGEST"
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            echo "$CERT_REPORT" | grep -F "$PINNED_DIGEST"
+          else
+            echo "$CERT_REPORT" | grep -F "$PINNED_DIGEST" || { echo "$CERT_REPORT" | grep -F "$TEMPLATE_DIGEST" && echo "::warning::APK carries the template debug signature; do not deliver it."; }
+          fi
           "$AAPT2" dump badging "$APK" | grep -F "package: name='app.familytimecapsule.mobile'"
           "$AAPT2" dump badging "$APK" | grep -F "versionCode='$EXPECTED_VERSION_CODE'"
           "$AAPT2" dump badging "$APK" | grep -F "versionName='$EXPECTED_VERSION'"
