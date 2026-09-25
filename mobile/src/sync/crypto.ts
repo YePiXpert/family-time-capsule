@@ -11,8 +11,9 @@ import {
 import { wordlist } from "@scure/bip39/wordlists/english.js";
 import { CHUNKS_PER_OBJECT } from "./planner";
 /**
- * 远端备份的零知识层。主密钥 K 就是 12 词恢复码（128 位熵，BIP39），没有口令、没有 scrypt：
- * 抄在纸上的那 12 个词能且只能在这台或下一台手机上解开远端的字节。
+ * 远端备份的零知识层。主密钥 K 是 16 字节的家庭内容钥匙：1.1.0 起它与恢复码相互独立，
+ * 只在获准的手机之间封装传递（见 family/recovery.ts）；1.0.8 及以前 K 本身就是 12 词恢复码，
+ * mnemonicOf／keyFromMnemonic 是那时留下的换算，现在只有测试在用。
  *
  * 一切随机都来自 expo-crypto：Hermes 没有 crypto.getRandomValues，noble／scure 自带的随机函数
  * 在真机上会直接抛错，所以这里连 nonce 都不随机——按内容派生：

@@ -243,3 +243,13 @@ for(const writingMode of ['polish','recap','ask','question','editor'])test(`${wr
   assert.equal(f.calls(),0);assert.equal(f.store.usage(f.member.member.id).writes,0);
  } finally {await f.app.close();f.store.close();}
 });
+test('an oversized JSON body gets 413 without talking about photos',async()=>{
+ const f=fixture();
+ const payload=JSON.stringify({...f.input(),context:'字'.repeat(6*1024*1024)});
+ const response=await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:{...f.headers(),'content-type':'application/json'},payload});
+ assert.equal(response.statusCode,413);assert.equal(response.json().code,'TOO_LARGE');
+ // AI 从 1.0.3 起不收照片，超大请求多半来自清单或目录，说法不能再提照片。
+ assert.ok(!response.json().message.includes('照片'));
+ assert.equal(f.calls(),0);
+ await f.app.close();f.store.close();
+});
