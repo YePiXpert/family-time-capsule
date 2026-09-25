@@ -33,12 +33,15 @@ export function recordMatches(
     .includes(query.toLowerCase());
 }
 
-/** 全库搜索：标题/正文/地点不区分大小写包含 + 可选筛选，按日期倒序，最多 100 条。 */
+/** 一次列出的结果上限；再多就提示加筛选。 */
+export const SEARCH_LIMIT = 100;
+/** 全库搜索：标题/正文/地点不区分大小写包含 + 可选筛选，按日期倒序，最多 limit 条。 */
 export function searchRecords(
   records: Stored<LocalRecord>[],
   query: string,
   filters: SearchFilters = {},
   kinds: Record<string, string> = {},
+  limit = SEARCH_LIMIT,
 ): Stored<LocalRecord>[] {
   const needle = query.trim().toLowerCase();
   const media = filters.media ?? "any";
@@ -55,5 +58,5 @@ export function searchRecords(
       return recordMatches(r, needle);
     })
     .sort((a, b) => compareDates(b.date, a.date) || a.id.localeCompare(b.id))
-    .slice(0, 100);
+    .slice(0, limit);
 }

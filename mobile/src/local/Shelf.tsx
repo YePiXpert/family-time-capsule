@@ -37,7 +37,8 @@ import {
   type Stored, stampUnsigned, unsignedRecords,
   compareDates,
 } from "./model";
-import { useNav } from "./navigation";
+import { useFocusGuard, useNav } from "./navigation";
+import { isEmptyDraft } from "./empties";
 import { daysSinceExport } from "./backup";
 import {
   backupDueOf,
@@ -919,6 +920,7 @@ export function Shelf() {
     { colors, large } = useTheme();
   const textScale = useTextScale();
   const insets = useSafeAreaInsets();
+  const captureGuard = useFocusGuard();
   const [error, setError] = useState(""),
     [viewport, setViewport] = useState(0),
     [contentHeight, setContentHeight] = useState(0),
@@ -954,9 +956,10 @@ export function Shelf() {
   );
   const drafts = useMemo(
     () =>
-      Object.values(draftMap).sort((a, b) =>
-        b.updatedAt.localeCompare(a.updatedAt),
-      ),
+      Object.values(draftMap)
+        // 点开就被杀掉的空白新草稿什么都没有，不挂「上次没写完」，也不催。
+        .filter((d) => d.recordId || !isEmptyDraft(d))
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
     [draftMap],
   );
   const letters = useMemo(
@@ -1013,10 +1016,14 @@ export function Shelf() {
       .catch((e) => setError(messageOf(e)));
   };
   const captureNow = () => {
+    if (!captureGuard.take()) return;
     hapticLight();
     void beginDraft(store)
       .then((draftId) => nav.navigate("Editor", { draftId }))
-      .catch((e) => setError(messageOf(e)));
+      .catch((e) => {
+        captureGuard.release();
+        setError(messageOf(e));
+      });
   };
   const createAlbum = () => {
     void beginSelection(store)

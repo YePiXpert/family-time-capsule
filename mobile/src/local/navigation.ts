@@ -1,4 +1,5 @@
-import { useNavigation } from "@react-navigation/native";
+import { useCallback, useRef } from "react";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type {
   NativeStackNavigationProp,
   NativeStackScreenProps,
@@ -35,3 +36,25 @@ export type Routes = {
 };
 export type Props<T extends keyof Routes> = NativeStackScreenProps<Routes, T>;
 export const useNav = () => useNavigation<NativeStackNavigationProp<Routes>>();
+
+/**
+ * 「新建再跳转」的入口只认第一下，直到这一页重新回到前台：转场途中再点一下，
+ * 第二份空草稿会换掉已经打开的编辑页参数、自己变成书架上的「上次没写完」。出错时 release 放行。
+ */
+export function useFocusGuard() {
+  const taken = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      taken.current = false;
+    }, []),
+  );
+  const take = useCallback(() => {
+    if (taken.current) return false;
+    taken.current = true;
+    return true;
+  }, []);
+  const release = useCallback(() => {
+    taken.current = false;
+  }, []);
+  return { take, release };
+}
