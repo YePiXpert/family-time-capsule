@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, rmSync, rmdirSync, lstatSync, statSync } from 'node:fs';
+import { closeSync, createReadStream, createWriteStream, existsSync, fstatSync, openSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, rmSync, rmdirSync, lstatSync, statSync } from 'node:fs';
 import { statfs } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { once } from 'node:events';
@@ -122,10 +122,20 @@ export class BackupStore {
       throw e;
     }
   }
+  /** 先打开再取长度：打开之后别的手机的回收删了它，这次下载照样读完；打开前就没了就是 404。 */
   read(id: string): { stream: ReturnType<typeof createReadStream>; size: number } | null {
-    const size = this.stat(id);
-    if (size === null) return null;
-    return { stream: createReadStream(this.objectPath(id)), size };
+    let fd: number;
+    try {
+      fd = openSync(this.objectPath(id), 'r');
+    } catch {
+      return null;
+    }
+    const s = fstatSync(fd);
+    if (!s.isFile()) {
+      closeSync(fd);
+      return null;
+    }
+    return { stream: createReadStream('', { fd }), size: s.size };
   }
   /** 全部对象：id、字节、最后修改时间；目录不存在就是空库。 */
   list(): { id: string; bytes: number; mtimeMs: number }[] {

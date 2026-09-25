@@ -1,7 +1,7 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -606,4 +606,29 @@ test('每设备对象占位低于上限与恰好到上限都通过，重复 id �
  // 其他设备有自己的上限；原有过期清理仍能释放行数。
  f.store.claimObjects(f.other.member.deviceId!,[oid(CLAIMS_PER_DEVICE+1)],now);
  f.store.claimObjects(device,[oid(CLAIMS_PER_DEVICE+1)],now+48*60*60*1000+2);assert.equal(count(),1);
+});
+test('an object pruned while its download is starting answers 404 NOT_FOUND, not a Fastify-internal 500',async t=>{
+ const dir=mkdtempSync(join(tmpdir(),'anan-read-race-')),store=new Store(':memory:'),backups=new BackupStore(dir);
+ const app=createApp(store,async()=>{throw new Error('本测试不调用 AI');},'test',backups,unusedTranscribe);
+ t.after(async()=>{await app.close();store.close();rmSync(dir,{recursive:true,force:true});});
+ seedFamily(store);const member=addMember(store,'家人','家人手机');
+ const bytes=randomBytes(100);
+ await backups.receive(oid(1),Readable.from([bytes]),{sha256:sha(bytes)});
+ // 另一台手机的 prune 恰好在「查到有这一份」和「打开文件」之间删掉了它。
+ const read=backups.read.bind(backups);
+ t.mock.method(backups,'read',(id:string)=>{unlinkSync(backups.objectPath(id));return read(id);});
+ const r=await app.inject({url:`/api/v1/backup/objects/${oid(1)}`,headers:{authorization:`Bearer ${member.token}`}});
+ assert.equal(r.statusCode,404,r.body.slice(0,120));assert.equal(r.json().code,'NOT_FOUND');
+});
+test('an object already open keeps streaming whole even if prune unlinks it mid-download',async t=>{
+ const dir=mkdtempSync(join(tmpdir(),'anan-read-open-')),store=new Store(':memory:'),backups=new BackupStore(dir);
+ const app=createApp(store,async()=>{throw new Error('本测试不调用 AI');},'test',backups,unusedTranscribe);
+ t.after(async()=>{await app.close();store.close();rmSync(dir,{recursive:true,force:true});});
+ seedFamily(store);const member=addMember(store,'家人','家人手机');
+ const bytes=randomBytes(300000);
+ await backups.receive(oid(2),Readable.from([bytes]),{sha256:sha(bytes)});
+ const read=backups.read.bind(backups);
+ t.mock.method(backups,'read',(id:string)=>{const found=read(id);unlinkSync(backups.objectPath(id));return found;});
+ const r=await app.inject({url:`/api/v1/backup/objects/${oid(2)}`,headers:{authorization:`Bearer ${member.token}`}});
+ assert.equal(r.statusCode,200,r.body.slice(0,120));assert.ok(r.rawPayload.equals(bytes));
 });
