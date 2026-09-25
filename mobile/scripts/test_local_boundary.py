@@ -95,6 +95,56 @@ class LocalBoundaryTest(unittest.TestCase):
         self.assertEqual(check(self.root), ['Forbidden dependencies: expo-network'])
 
 
+class BoundaryBypassTest(unittest.TestCase):
+    """绕过旧版检查的写法：换名、传引用、文件系统下载、src 之外的入口、动态 import、require、.js 文件。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        clean_tree(self.root)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def assertFlagged(self, relative, text):
+        write(self.root, relative, text)
+        self.assertNotEqual(check(self.root), [], f'not flagged: {relative}: {text!r}')
+
+    def assertClean(self, relative, text):
+        write(self.root, relative, text)
+        self.assertEqual(check(self.root), [])
+
+    def test_aliased_fetch_import_in_local(self):
+        self.assertFlagged('src/local/backup.ts', 'import { fetch as get } from "expo/fetch";\nexport const up = () => get("https://x");\n')
+
+    def test_fetch_passed_by_reference_in_local(self):
+        self.assertFlagged('src/local/backup.ts', 'const send = globalThis.fetch;\nexport const up = () => send("https://x");\n')
+
+    def test_expo_file_system_download_in_local(self):
+        self.assertFlagged('src/local/backup.ts', 'import { File, Paths } from "expo-file-system";\nexport const pull = () => File.downloadFileAsync("https://x", Paths.cache);\n')
+
+    def test_network_call_in_app_entry_outside_src(self):
+        self.assertFlagged('App.tsx', 'fetch("https://x");\nexport { default } from "./src/local/App";\n')
+
+    def test_network_call_in_native_module_source(self):
+        self.assertFlagged('modules/share-intake/src/index.ts', 'export const leak = () => fetch("https://x");\n')
+
+    def test_dynamic_import_of_sync_from_local(self):
+        self.assertFlagged('src/local/backup.ts', 'export const go = async () => (await import("../sync/transport")).createTransport();\n')
+
+    def test_require_of_secure_store_from_local(self):
+        self.assertFlagged('src/local/backup.ts', 'const SecureStore = require("expo-secure-store");\n')
+
+    def test_js_file_in_src_local(self):
+        self.assertFlagged('src/local/helper.js', 'export const up = () => fetch("https://x");\n')
+
+    def test_comment_mentioning_fetch_is_not_a_call(self):
+        self.assertClean('src/local/archive-viewer.ts', '/** file:// 下 fetch 不可用，所以用 <script src>。 */\n// fetch 也不行\nexport const viewer = "https://example.invalid/x";\n')
+
+    def test_dynamic_import_inside_local_is_fine(self):
+        self.assertClean('src/local/backup.ts', 'export const go = async () => (await import("./activation")).run();\n')
+
+
 if __name__ == '__main__':
     unittest.main()
 

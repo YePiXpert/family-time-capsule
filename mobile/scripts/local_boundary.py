@@ -2,7 +2,9 @@
 """可执行的手机端「宪法」：本机记录离线、联网只在三个传输文件里、服务地址只有一处。
 
 规则（违反即返回一条人话说明；空列表 = 通过）：
-1. `fetch(`／`XMLHttpRequest(`／`WebSocket(` 只允许出现在 NETWORK_FILES 里（AI 客户端、同步传输层、家庭与设备）。
+1. 联网只允许出现在 NETWORK_FILES 里（AI 客户端、同步传输层、家庭与设备）：`fetch`／`XMLHttpRequest`／`WebSocket`／
+   `EventSource` 作为标识符出现（含换名导入、传引用）、`expo/fetch`，以及 expo-file-system 的下载上传函数都算。
+   检查范围是 src、App.tsx、index.ts 与 modules/*/src 里的全部 TS／JS 源文件；注释不算。
 2. 任何 src 文件都不得含子串 `serverUrl`、`credentials`——本机记录不认识账号这回事。
 3. `src/local/**` 里只有 LOCAL_MAY_IMPORT_SYNC 列出的两个界面文件可以 import `../sync/` 或 `../family/`：
    同步与家庭授权只走 `src/sync`、`src/family`，本机记录、备份与恢复的代码路径里没有网络。
@@ -18,21 +20,30 @@ import re
 from pathlib import Path
 
 NETWORK_FILES = ('src/ai/client.ts', 'src/sync/transport.ts', 'src/family/api.ts')
-NETWORK_CALL = re.compile(r'\b(fetch|XMLHttpRequest|WebSocket)\s*\(')
+NETWORK_CALL = re.compile(
+    r'\b(fetch|XMLHttpRequest|WebSocket|EventSource|sendBeacon|downloadFileAsync|downloadAsync|uploadAsync'
+    r'|createUploadTask|createDownloadResumable)\b|["\']expo/fetch["\']'
+)
+COMMENTS = re.compile(r'/\*.*?\*/|(?<![:"\'\w])//[^\n]*', re.S)
+SOURCE_SUFFIXES = ('.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs')
+# import … from "x"、import "x"、import("x")、require("x") 都算引入。
+IMPORT_OF = r'''(?:\bfrom\s+|\bimport\s+|\bimport\s*\(\s*|\brequire\s*\(\s*)'''
 ACCOUNT_WORDS = ('serverUrl', 'credentials')
 SHARED_LOCAL_TSX = ('ui', 'context')
-LOCAL_TSX_IMPORT = re.compile(r'''from\s+["']\.\./local/([^/"']+)["']''')
+LOCAL_TSX_IMPORT = re.compile(IMPORT_OF + r'''["']\.\./local/([^/"']+)["']''')
 LOCAL_MAY_IMPORT_SYNC = ('src/local/App.tsx', 'src/local/Settings.tsx')
-SYNC_IMPORT = re.compile(r'''from\s+["']\.\./(sync|family)/''')
-SECURE_STORE_IMPORT = re.compile(r'''from\s+["']expo-secure-store["']''')
+SYNC_IMPORT = re.compile(IMPORT_OF + r'''["']\.\./(sync|family)/''')
+SECURE_STORE_IMPORT = re.compile(IMPORT_OF + r'''["']expo-secure-store["']''')
 FORBIDDEN_DEPENDENCIES = {'next', 'better-auth', 'drizzle-orm', 'expo-network'}
 SERVICE_URL = 'https://capsule.yep.li/api/v1'
 SERVICE_URL_FILE = 'src/local/brand.ts'
 
 
 def source_files(root: Path):
-    for file in sorted((root / 'src').rglob('*')):
-        if file.suffix in ('.ts', '.tsx'):
+    candidates = [*(root / 'src').rglob('*'), *(root / 'modules').glob('*/src/**/*')]
+    candidates += [root / name for name in ('App.tsx', 'index.ts', 'index.js')]
+    for file in sorted(set(candidates)):
+        if file.is_file() and file.suffix in SOURCE_SUFFIXES:
             yield file
 
 
@@ -42,7 +53,8 @@ def check(root: Path) -> list[str]:
     for file in source_files(root):
         relative = file.relative_to(root).as_posix()
         text = file.read_text(encoding='utf-8')
-        if relative not in NETWORK_FILES and NETWORK_CALL.search(text):
+        code = COMMENTS.sub('', text)
+        if relative not in NETWORK_FILES and NETWORK_CALL.search(code):
             problems.append(f'Networking outside the transport files: {relative}')
         for word in ACCOUNT_WORDS:
             if word in text:
