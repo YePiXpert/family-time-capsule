@@ -66,10 +66,13 @@ input.search{width:100%;padding:10px 12px;border:1px solid var(--line);border-ra
   function src(p) { return p.split("/").map(encodeURIComponent).join("/"); }
   function dayLabel(day) { var p = day.split("-"); return p[0] + "年" + (+p[1]) + "月" + (+p[2]) + "日"; }
   function monthLabel(m) { var p = m.split("-"); return (+p[1]) + "月"; }
-  function todayKey() {
-    var d = new Date(), m = d.getMonth() + 1, day = d.getDate();
+  function keyOf(d) {
+    var m = d.getMonth() + 1, day = d.getDate();
     return d.getFullYear() + "-" + (m < 10 ? "0" : "") + m + "-" + (day < 10 ? "0" : "") + day;
   }
+  function todayKey() { return keyOf(new Date()); }
+  // 时刻按本地日历日显示，与 Markdown 和文件夹名一致；截前十位是 UTC 日期，北京时间早上八点前会差一天。
+  function localDay(iso) { var d = new Date(iso); return isNaN(d.getTime()) ? String(iso).slice(0, 10) : keyOf(d); }
   function ageAt(birthday, day) {
     if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(birthday || "")) return "";
     var b = birthday.split("-").map(Number), d = day.split("-").map(Number);
@@ -145,9 +148,9 @@ input.search{width:100%;padding:10px 12px;border:1px solid var(--line);border-ra
       var open = !!l.openedAt || l.openAt <= today;
       var title = esc(l.title || "一封信");
       if (!open) return '<article class="card envelope"><div class="stamp">' + esc(Array.from((l.from || "").trim())[0] || "信") + "</div><h3>" + title +
-        '</h3><div class="muted">还没到日子 · 封存至 ' + esc(dayLabel(l.openAt)) + (l.from ? " · " + esc(l.from) : "") + '</div><div class="muted">写于 ' + esc(dayLabel(l.writtenAt.slice(0, 10))) + "</div></article>";
-      return '<article class="card"><h3>' + title + '</h3><div class="muted">写于 ' + esc(dayLabel(l.writtenAt.slice(0, 10))) +
-        (l.openedAt ? " · 拆于 " + esc(dayLabel(l.openedAt.slice(0, 10))) : "") + '</div><p class="text">' + esc(l.text) + "</p>" +
+        '</h3><div class="muted">还没到日子 · 封存至 ' + esc(dayLabel(l.openAt)) + (l.from ? " · " + esc(l.from) : "") + '</div><div class="muted">写于 ' + esc(dayLabel(localDay(l.writtenAt))) + "</div></article>";
+      return '<article class="card"><h3>' + title + '</h3><div class="muted">写于 ' + esc(dayLabel(localDay(l.writtenAt))) +
+        (l.openedAt ? " · 拆于 " + esc(dayLabel(localDay(l.openedAt))) : "") + '</div><p class="text">' + esc(l.text) + "</p>" +
         (l.from ? '<div class="sign">—— ' + esc(l.from) + "</div>" : "") + mediaHtml(l.media) + "</article>";
     }).join("");
   }
@@ -203,7 +206,7 @@ input.search{width:100%;padding:10px 12px;border:1px solid var(--line);border-ra
       (lib.child.motto ? '<p class="title-motto">' + esc(lib.child.motto) + '</p>' : '');
     var count = lib.records.length + " 条记录";
     if (lib.year) count = lib.year + " 年 · " + count;
-    el("subtitle").innerHTML = esc(count) + (lib.child.birthday ? " · 生日 " + esc(dayLabel(lib.child.birthday)) : "") + " · 导出于 " + esc(dayLabel(lib.createdAt.slice(0, 10)));
+    el("subtitle").innerHTML = esc(count) + (lib.child.birthday ? " · 生日 " + esc(dayLabel(lib.child.birthday)) : "") + " · 导出于 " + esc(dayLabel(localDay(lib.createdAt)));
     el("tabs").innerHTML = TABS.filter(function (t) { return t[2](); }).map(function (t) {
       return '<button class="tab ' + (state.tab === t[0] ? "on" : "") + '" data-tab="' + t[0] + '">' + t[1] + "</button>";
     }).join("");

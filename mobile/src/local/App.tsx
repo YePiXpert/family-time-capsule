@@ -35,7 +35,12 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
 import { APP_NAME } from "./brand";
-import { inspectBackup, recoverStartupBackup, retainedBackups } from "./backup";
+import {
+  discardPickedCopies,
+  inspectBackup,
+  recoverStartupBackup,
+  retainedBackups,
+} from "./backup";
 import { StatusBar } from "expo-status-bar";
 import { subscribeToPendingNativeShares } from "../../modules/share-intake/src";
 import { openLocalStore } from "./disk";
@@ -443,12 +448,22 @@ export default function App() {
         files = selected.assets.map((asset) => new File(asset.uri));
       }
       const selectedFiles = files;
-      const library = await inspectBackup(selectedFiles);
+      let library;
+      try {
+        library = await inspectBackup(selectedFiles);
+      } catch (e) {
+        discardPickedCopies(selectedFiles);
+        throw e;
+      }
       Alert.alert(
         "从备份恢复？",
         `这份备份里有 ${Object.keys(library.records).length} 段时光、${Object.keys(library.albums).length} 本相册。原有文件会保留，恢复后以这份备份继续使用。`,
         [
-          { text: "取消", style: "cancel" },
+          {
+            text: "取消",
+            style: "cancel",
+            onPress: () => discardPickedCopies(selectedFiles),
+          },
           {
             text: "恢复备份",
             onPress: () => {
@@ -456,7 +471,10 @@ export default function App() {
               void recoverStartupBackup(selectedFiles)
                 .then(initialize)
                 .catch((e) => setError(messageOf(e)))
-                .finally(() => setRecovering(false));
+                .finally(() => {
+                  discardPickedCopies(selectedFiles);
+                  setRecovering(false);
+                });
             },
           },
         ],
