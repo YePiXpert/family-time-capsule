@@ -1,17 +1,11 @@
 {
-  "name": "anan-growth-journal",
-  "version": "0.1.0",
+  "name": "family-time-capsule",
   "private": true,
-  "description": "Android and iOS journal stored entirely on the device.",
+  "description": "桉桉成长记：手机应用在 mobile/，家庭服务在 server/。依赖分别在两个目录里 npm ci。",
   "scripts": {
-    "postinstall": "npm --prefix mobile ci",
-    "start": "npm --prefix mobile start",
-    "android": "npm --prefix mobile run android",
-    "ios": "npm --prefix mobile run ios",
-    "typecheck": "npm --prefix mobile run typecheck",
-    "lint": "npm --prefix mobile run lint",
-    "test": "npm --prefix mobile test",
-    "build:android": "npm --prefix mobile run build:android",
-    "build:ios": "npm --prefix mobile run build:ios"
+    "check": "npm run check:mobile && npm run check:server && npm run check:scripts",
+    "check:mobile": "npm --prefix mobile test && npm --prefix mobile run typecheck && npm --prefix mobile run lint",
+    "check:server": "npm --prefix server test && npm --prefix server run typecheck",
+    "check:scripts": "python3 mobile/scripts/verify-local-boundary.py && python3 -m unittest discover -s mobile/scripts -p 'test_*.py'"
   }
 }

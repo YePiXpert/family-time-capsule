@@ -1,70 +1,37 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
-# dependencies
-/node_modules
-/.pnp
-.pnp.*
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/versions
-
-# testing
-/coverage
-
-# next.js
-/.next/
-/out/
-
-# production
-/build
-
-# misc
-.DS_Store
-*.pem
-
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
-
-# env files (can opt-in for committing if needed)
-.env*
-!.env.example
-
-# vercel
-.vercel
-
-# typescript
+# 依赖与构建产物（mobile/ 另有自己的 .gitignore）
+node_modules/
+/build/
+/coverage/
 *.tsbuildinfo
-next-env.d.ts
 
-# family-time-capsule：本地媒体与数据库（PRD §11，data/ 整体不进 git）
+# 本地资料与数据库：家庭内容和服务端数据都不进 git
 /data/
 /demo-data/
-
-# sqlite
 *.sqlite
 *.sqlite-journal
 *.sqlite-wal
 *.sqlite-shm
 
-# test artifacts
+# 私有配置：只提交示例
+.env*
+!.env.example
+*.pem
+
+# 测试与调试产物
 /test-results/
 /playwright-report/
 /blob-report/
 /debug.log
-
-# Python operational helpers
+npm-debug.log*
 __pycache__/
-
-# debug session artifacts / stray package manager files
 *.zip
+
+# 只用 npm：误生成的其他包管理器文件
 /pnpm-lock.yaml
 /pnpm-workspace.yaml
+/yarn.lock
 
-# 本地 AI 会话目录（HANDOFF：不要提交）
+# 系统与本地 AI 会话目录
+.DS_Store
 /.zcode/
 /.commandcode/
