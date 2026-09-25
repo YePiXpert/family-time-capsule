@@ -32,7 +32,7 @@ python3 -m unittest discover -s mobile/scripts -p 'test_*.py'
 | `server/` | 设备鉴权、密文存储、AI 代理和用量 |
 | `.github/workflows/` | 日常 CI 与原生安装包构建 |
 
-手机唯一服务地址在 `brand.ts`，部署与上游值留在私有配置。家庭钥匙不进入 Library 或普通备份；恢复秘密不持久化。加密协议设计见 [家庭与设备](history/plans/PLAN-FAMILY-DEVICES.md)。
+手机唯一服务地址在 `brand.ts`，部署与上游值留在私有配置。家庭钥匙不进入 Library 或普通备份；恢复秘密不持久化。模块、钥匙、同步协议与服务端接口见 [结构与协议](ARCHITECTURE.md)。
 
 ## 易错约束
 
