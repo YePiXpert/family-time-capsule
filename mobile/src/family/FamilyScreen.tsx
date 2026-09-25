@@ -14,12 +14,16 @@ import {
   SettingsGroup,
   SettingsRow,
   Text,
+  dateLabel,
   messageOf,
   useStyles,
   useTheme,
 } from "../local/ui";
+import { verifyRemoteBackup } from "../sync/engine";
 import { leaveFamily, readNewestManifest, startSharing } from "../sync/family";
-import { unreadNotice } from "../sync/state";
+import { bytesLabel } from "../sync/planner";
+import { clearSyncFiles, loadKey, unreadNotice } from "../sync/state";
+import { SyncCard } from "../sync/SyncCard";
 import { claimSync, isLocalBusy, markSyncRunning } from "../sync/status";
 import { SyncError, createTransport } from "../sync/transport";
 import { createFamilyApi, FamilyError, type FamilyInfo, type Overview, type Role } from "./api";
@@ -46,7 +50,7 @@ import { Scanner } from "./Scanner";
 import { forgetToken, getToken } from "./session";
 import { RecoveryWords } from "./Words";
 /**
- * 「我的 → 家庭与设备」：一页走完开家庭、升级、出码加入、扫码批准、恢复码、设备与退出。
+ * 「设置 → 家庭与同步」：一页走完开家庭、升级、出码加入、扫码批准、同步、恢复码、设备、管理者维护与退出。
  * 秘密（恢复词、二维码里的 S、领取凭据）只在这一页的内存里，不进导航参数、不落盘。
  */
 type Step =
@@ -64,7 +68,8 @@ type Step =
   | { kind: "pick"; secret: Uint8Array; admins: { id: string; name: string }[] }
   | { kind: "scan"; round: number }
   | { kind: "approve"; inspected: Inspected }
-  | { kind: "devices"; family: FamilyInfo; overview: Overview };
+  | { kind: "devices"; family: FamilyInfo; overview: Overview }
+  | { kind: "maintain"; family: FamilyInfo };
 export const roleLabel = (role: Role) => (role === "admin" ? "管理者" : "家人");
 const defaultDeviceName = () => (Platform.OS === "ios" ? "iPhone" : "安卓手机");
 const POLL_MS = 2500;
@@ -108,6 +113,8 @@ export function FamilyScreen({ navigation }: Props<"Family">) {
     [newName, setNewName] = useState(""),
     [newRole, setNewRole] = useState<Role>("member"),
     [existingId, setExistingId] = useState<string | null>(null);
+  // 本机有家庭令牌：服务一时连不上时，身份卡报错，同步卡（只读本机状态）照常显示。
+  const [signedIn, setSignedIn] = useState(false);
   const controller = useRef<AbortController | null>(null);
   /** 出了码、还没获准也没关掉的申请：离开这一页或点「不加入了」时撤掉。 */
   const openJoin = useRef<JoinRequest | null>(null);
@@ -118,6 +125,7 @@ export function FamilyScreen({ navigation }: Props<"Family">) {
       try {
         const token = await getToken();
         setError("");
+        setSignedIn(!!token);
         if (!token) {
           setStep({ kind: "out", note });
           return;
@@ -306,6 +314,50 @@ export function FamilyScreen({ navigation }: Props<"Family">) {
         },
       ],
     );
+  /** 维护动作与同步共用一把锁：验证远端、清空远端都不能和同步、本机备份同时跑。 */
+  const exclusive = (fn: (signal: AbortSignal) => Promise<void>) =>
+    run(async (signal) => {
+      if (isLocalBusy()) throw new Error("本机正在备份或恢复，等它完成再试。");
+      if (!claimSync()) throw new Error("正在同步，等它完成再试。");
+      try {
+        await fn(signal);
+      } finally {
+        markSyncRunning(false);
+      }
+    });
+  const verifyRemote = () =>
+    exclusive(async (signal) => {
+      const key = await loadKey();
+      if (!key) throw new Error("这台手机还没拿到家庭的钥匙，请退出家庭后重新加入。");
+      const summary = await verifyRemoteBackup({
+        transport: createTransport(),
+        key,
+        onProgress: setProgress,
+        signal,
+      });
+      setMessage(
+        `远端完整：${dateLabel(summary.createdAt)} 发布的这一份，${bytesLabel(summary.bytes)}，都在。`,
+      );
+    });
+  const wipeFamily = () =>
+    Alert.alert(
+      "删掉全家的远端？",
+      "这会删除全家所有手机发布到远端的内容，这台手机也停止同步。各台手机本机的时光都还在；家人的手机再同步时会重新传上去。",
+      [
+        { text: "取消", style: "cancel" },
+        {
+          text: "删掉全家的远端",
+          style: "destructive",
+          onPress: () =>
+            void exclusive(async (signal) => {
+              await createTransport().wipeFamily(signal);
+              // 家庭的钥匙留着：它属于家庭，不属于远端；再开始同步还用它。
+              clearSyncFiles();
+              setMessage("全家的远端已删除，这台手机已停止同步。");
+            }),
+        },
+      ],
+    );
   const memberActions = (member: Overview["members"][number]) =>
     Alert.alert(`${member.name} · ${roleLabel(member.role)}`, member.enabled ? undefined : "已停用", [
       {
@@ -349,16 +401,19 @@ export function FamilyScreen({ navigation }: Props<"Family">) {
   switch (step.kind) {
     case "loading":
       body = (
-        <Card>
-          {error ? (
-            <>
-              <ErrorText message={error} />
-              <Button title="再试一次" onPress={() => void load()} />
-            </>
-          ) : (
-            <Text style={s.muted}>正在读取…</Text>
-          )}
-        </Card>
+        <>
+          <Card>
+            {error ? (
+              <>
+                <ErrorText message={error} />
+                <Button title="再试一次" onPress={() => void load()} />
+              </>
+            ) : (
+              <Text style={s.muted}>正在读取…</Text>
+            )}
+          </Card>
+          {!!error && signedIn && <SyncCard busy={busy} />}
+        </>
       );
       break;
     case "out":
@@ -675,7 +730,7 @@ export function FamilyScreen({ navigation }: Props<"Family">) {
       body = (
         <Card testID="family-scan">
           <Text style={s.heading}>扫家人手机上的二维码</Text>
-          <Text style={s.muted}>请对方在自己手机上点「我的 → 家庭与设备 → 加入已有家庭」。</Text>
+          <Text style={s.muted}>请对方在自己手机上点「设置 → 家庭与同步 → 加入已有家庭」。</Text>
           {error ? (
             <>
               {status}
@@ -831,6 +886,52 @@ export function FamilyScreen({ navigation }: Props<"Family">) {
       );
       break;
     }
+    case "maintain": {
+      const { family } = step;
+      body = (
+        <>
+          <Card testID="family-maintain">
+            <Text style={s.heading}>管理者维护</Text>
+            <Text style={s.muted}>排查问题时才用，平时不用管。</Text>
+            {status}
+            <View style={{ alignItems: "flex-start" }}>
+              <Button
+                title={busy ? "正在验证…" : "验证远端"}
+                kind="text"
+                testID="remote-verify"
+                disabled={busy}
+                onPress={() => void verifyRemote()}
+              />
+              <Button
+                title="重新生成恢复码"
+                kind="text"
+                testID="family-regenerate"
+                disabled={busy}
+                onPress={() =>
+                  Alert.alert("重新生成恢复码？", "新的一套马上生效，纸上那套旧的就作废了。", [
+                    { text: "取消", style: "cancel" },
+                    {
+                      text: "重新生成",
+                      onPress: () =>
+                        void run(async () => {
+                          const done = await regenerateRecovery({ api });
+                          go({ kind: "words", words: done.words });
+                        }),
+                    },
+                  ])
+                }
+              />
+            </View>
+            <Text style={s.footnote}>
+              {`家庭钥匙指纹 ${family.keyId.slice(0, 8)}。钥匙只在获准的手机上；家庭恢复码在管理者手里。`}
+            </Text>
+          </Card>
+          <DangerCard title="删掉全家的远端" testID="remote-wipe-family" disabled={busy} onPress={wipeFamily} />
+          {back()}
+        </>
+      );
+      break;
+    }
     case "home": {
       const { family, overview } = step;
       const admin = family.me.role === "admin";
@@ -845,7 +946,6 @@ export function FamilyScreen({ navigation }: Props<"Family">) {
               <View style={s.row}>
                 <Button
                   title="添加一台手机"
-                  primary
                   icon="plus"
                   testID="family-add"
                   disabled={busy}
@@ -858,9 +958,17 @@ export function FamilyScreen({ navigation }: Props<"Family">) {
                   disabled={busy || !overview}
                   onPress={() => overview && go({ kind: "devices", family, overview })}
                 />
+                <Button
+                  title="维护"
+                  kind="text"
+                  testID="family-maintain-open"
+                  disabled={busy}
+                  onPress={() => go({ kind: "maintain", family })}
+                />
               </View>
             )}
           </Card>
+          <SyncCard busy={busy} />
           <SettingsGroup title="家人">
             {rows.map((m, i) => (
               <SettingsRow
@@ -873,36 +981,14 @@ export function FamilyScreen({ navigation }: Props<"Family">) {
               />
             ))}
           </SettingsGroup>
-          {admin && (
-            <Button
-              title="重新生成恢复码"
-              kind="text"
-              testID="family-regenerate"
-              disabled={busy}
-              onPress={() =>
-                Alert.alert("重新生成恢复码？", "新的一套马上生效，纸上那套旧的就作废了。", [
-                  { text: "取消", style: "cancel" },
-                  {
-                    text: "重新生成",
-                    onPress: () =>
-                      void run(async () => {
-                        const done = await regenerateRecovery({ api });
-                        go({ kind: "words", words: done.words });
-                      }),
-                  },
-                ])
-              }
-            />
-          )}
           <DangerCard title="退出这个家庭" testID="family-leave" disabled={busy} onPress={() => leave(family, overview)} />
-          <Text style={s.footnote}>{`家庭钥匙指纹 ${family.keyId.slice(0, 8)}`}</Text>
         </>
       );
       break;
     }
   }
   return (
-    <Page title="家庭与设备" testID="family-page">
+    <Page title="家庭与同步" testID="family-page">
       {body}
     </Page>
   );

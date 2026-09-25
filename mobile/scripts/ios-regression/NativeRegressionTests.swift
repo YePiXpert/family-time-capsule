@@ -165,6 +165,9 @@ final class NativeRegressionTests: XCTestCase {
         relaunchApp(); tap("open-settings"); tap("settings-family")
         XCTAssertTrue(element("family-out").waitUntilExists(timeout: 20), "Family page should open offline")
         XCTAssertTrue(element("family-join").exists); XCTAssertTrue(element("family-start").exists); XCTAssertTrue(element("family-recover").exists)
+        // 同步卡只在已加入时出现：没加入时没有任何同步、上传入口。
+        XCTAssertFalse(element("remote-card").exists, "Signed-out family page must not offer sync")
+        XCTAssertFalse(element("remote-backup").exists); XCTAssertFalse(element("remote-first-sync").exists)
         shot("family-out")
         relaunchApp()
         tap("volume-year-2026")
@@ -191,10 +194,9 @@ final class NativeRegressionTests: XCTestCase {
         XCTAssertTrue(sharedBook.waitUntilExists(timeout: 300), "Book PDF share sheet never appeared")
         shot("yearbook-pdf-share-sheet"); assertNoFailure("Yearbook PDF export")
         relaunchApp(); tap("open-settings"); tap("备份与恢复")
-        // 远端备份卡在最后：没加入家庭时只有「去加入家庭」，没有上传入口。
-        XCTAssertTrue(element("remote-card").waitUntilExists(timeout: 20), "Remote backup card missing")
-        XCTAssertTrue(element("remote-family").waitUntilExists(timeout: 20), "Remote card should point to the family page")
-        XCTAssertFalse(element("remote-backup").exists, "Remote card must not offer uploads while signed out")
+        // 备份页不再挂家人卡：同步只在「家庭与同步」。
+        XCTAssertTrue(element("backup-export").waitUntilExists(timeout: 20), "Backup page missing")
+        XCTAssertFalse(element("remote-card").exists, "Backup page must not carry the sync card")
         tap("恢复这份备份"); tap("恢复并替换")
         wait("Restore did not finish") { self.app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "恢复完成")).firstMatch.exists }
         shot("backup-restored")

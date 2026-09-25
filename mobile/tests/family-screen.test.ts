@@ -15,6 +15,7 @@ const env = vi.hoisted(() => ({
   share: vi.fn(), newest: vi.fn(), leave: vi.fn(), mark: vi.fn(), busy: vi.fn(),
   forgetToken: vi.fn(), forgetDeviceKey: vi.fn(), token: vi.fn(),
   prepare: vi.fn(), complete: vi.fn(), recoveryAdmins: vi.fn(),
+  clear: vi.fn(), verify: vi.fn(), transport: {} as Record<string, unknown>,
 }));
 vi.mock("react", () => ({
   useState: (initial: unknown) => {
@@ -44,12 +45,15 @@ vi.mock("../src/local/context", () => ({ useStore: () => ({}), useLibrary: () =>
 vi.mock("../src/local/ui", () => ({
   Button: "Button", Card: "Card", DangerCard: "DangerCard", ErrorText: "ErrorText", Field: "Field", FieldRow: "FieldRow",
   Page: "Page", SettingsGroup: "SettingsGroup", SettingsRow: "SettingsRow", Text: "Text",
-  messageOf: (e: Error) => e.message, useStyles: () => ({}), useTheme: () => ({ colors: {} }),
+  dateLabel: String, messageOf: (e: Error) => e.message, useStyles: () => ({}), useTheme: () => ({ colors: {} }),
 }));
 vi.mock("../src/sync/family", () => ({ startSharing: env.share, readNewestManifest: env.newest, leaveFamily: env.leave }));
-vi.mock("../src/sync/state", () => ({ unreadNotice: () => "" }));
+vi.mock("../src/sync/state", () => ({ unreadNotice: () => "", clearSyncFiles: env.clear, loadKey: async () => new Uint8Array(32) }));
+vi.mock("../src/sync/SyncCard", () => ({ SyncCard: "SyncCard" }));
+vi.mock("../src/sync/engine", () => ({ verifyRemoteBackup: env.verify }));
+vi.mock("../src/sync/planner", () => ({ bytesLabel: (n: number) => `${n} B` }));
 vi.mock("../src/sync/status", () => ({ claimSync: () => (env.mark(true), true), isLocalBusy: env.busy, markSyncRunning: env.mark }));
-vi.mock("../src/sync/transport", () => ({ SyncError: class extends Error {}, createTransport: () => ({}) }));
+vi.mock("../src/sync/transport", () => ({ SyncError: class extends Error {}, createTransport: () => env.transport }));
 vi.mock("../src/family/api", async () => {
   const actual = await vi.importActual<typeof import("../src/family/api")>("../src/family/api");
   return { ...actual, createFamilyApi: () => env.api };
@@ -76,7 +80,7 @@ function text(tree: unknown): string {
   return tree && typeof tree === "object" ? text((tree as Element).props?.children) : "";
 }
 // useState 槽位：api、step、busy、error、message、progress、synced……
-const STEP = 1, ERROR = 3, MESSAGE = 4, SYNCED = 6;
+const STEP = 1, ERROR = 3, MESSAGE = 4, SYNCED = 6, SIGNED_IN = 15;
 const navigation = { addListener: vi.fn(() => () => {}), dispatch: vi.fn() };
 function render(step?: unknown) {
   env.cursor = 0;
@@ -112,7 +116,7 @@ const overview = (devices: Partial<Overview["devices"][number]>[]): Overview => 
 });
 beforeEach(() => {
   vi.clearAllMocks();
-  env.slots = []; env.cursor = 0; env.records = {}; env.alerts = [];
+  env.slots = []; env.cursor = 0; env.records = {}; env.alerts = []; env.transport = {};
   env.api = { leave: vi.fn(), family: vi.fn(), overview: vi.fn() };
   env.busy.mockReturnValue(false);
 });
@@ -226,10 +230,56 @@ it("设备清单已过时、服务拒绝最后一台管理者退出时保留凭�
   expect((env.slots[STEP] as { kind: string }).kind).toBe("home");
   expect(env.mark.mock.calls).toEqual([[true], [false]]);
 });
-it("家人（非管理者）看不到添加、设备与换恢复码", () => {
+it("家人（非管理者）看不到添加、设备与维护，同步卡照常", () => {
   const tree = render({ kind: "home", family: { ...family, me: { ...family.me, role: "member" } }, overview: null });
-  for (const id of ["family-add", "family-devices-open", "family-regenerate"]) expect(find(tree, id)).toBeUndefined();
+  for (const id of ["family-add", "family-devices-open", "family-maintain-open", "family-regenerate", "remote-verify", "remote-wipe-family"]) expect(find(tree, id)).toBeUndefined();
+  expect(nodes(tree).filter((el) => el.type === "SyncCard")).toHaveLength(1);
   expect(find(tree, "family-leave")).toBeDefined();
+});
+it("管理者首页：身份、同步卡、维护入口；维护动作与钥匙指纹不摊在首页", () => {
+  const tree = render({ kind: "home", family, overview: overview([{}]) });
+  expect(nodes(tree).filter((el) => el.type === "SyncCard")).toHaveLength(1);
+  for (const id of ["remote-verify", "remote-wipe-family", "family-regenerate"]) expect(find(tree, id)).toBeUndefined();
+  expect(text(tree)).not.toContain("钥匙指纹");
+  expect(nodes(tree).filter((el) => el.type === "Button" && (el.props as { primary?: boolean }).primary)).toEqual([]);
+  find(tree, "family-maintain-open")!.props!.onPress!();
+  expect(env.slots[STEP]).toEqual({ kind: "maintain", family });
+});
+it("管理者维护：验证远端、换恢复码、钥匙指纹；删掉全家的远端先确认，清远端与同步文件、留着家庭钥匙", async () => {
+  env.transport = { wipeFamily: vi.fn() };
+  const tree = render({ kind: "maintain", family });
+  for (const id of ["remote-verify", "family-regenerate", "remote-wipe-family"]) expect(find(tree, id)).toBeDefined();
+  expect(text(tree)).toContain("家庭钥匙指纹 01234567");
+  find(tree, "remote-wipe-family")!.props!.onPress!();
+  expect(env.transport.wipeFamily).not.toHaveBeenCalled();
+  env.alerts[0]!.buttons.find((b) => b.text === "删掉全家的远端")!.onPress!();
+  await vi.waitFor(() => expect(env.clear).toHaveBeenCalledOnce());
+  expect(env.transport.wipeFamily).toHaveBeenCalledOnce();
+  expect(env.forgetDeviceKey).not.toHaveBeenCalled();
+  expect(env.mark.mock.calls).toEqual([[true], [false]]);
+  expect(env.slots[MESSAGE]).toContain("全家的远端已删除");
+});
+it("验证远端与同步共用一把锁，本机在备份时不跑", async () => {
+  env.busy.mockReturnValue(true);
+  find(render({ kind: "maintain", family }), "remote-verify")!.props!.onPress!();
+  await vi.waitFor(() => expect(env.slots[ERROR]).toContain("本机正在备份或恢复"));
+  expect(env.verify).not.toHaveBeenCalled();
+  env.busy.mockReturnValue(false);
+  env.verify.mockResolvedValueOnce({ createdAt: "2026-09-20T10:00:00.000Z", bytes: 42 });
+  find(render(), "remote-verify")!.props!.onPress!();
+  await vi.waitFor(() => expect(env.slots[MESSAGE]).toContain("远端完整"));
+  expect(env.mark.mock.calls).toEqual([[true], [false]]);
+});
+it("服务一时连不上：已加入的手机照样看得到同步卡，没加入的不给", () => {
+  render({ kind: "loading" });
+  env.slots[ERROR] = "网络不通";
+  env.slots[SIGNED_IN] = true;
+  let tree = render();
+  expect(nodes(tree).find((el) => el.type === "ErrorText")!.props!.message).toBe("网络不通");
+  expect(nodes(tree).filter((el) => el.type === "SyncCard")).toHaveLength(1);
+  env.slots[SIGNED_IN] = false;
+  tree = render();
+  expect(nodes(tree).filter((el) => el.type === "SyncCard")).toHaveLength(0);
 });
 it("最后一台管理者设备的判断与服务端一致：待确认、已停用、停用管理者名下的都不算", () => {
   expect(isLastAdminDevice(overview([{}]), "d1")).toBe(true);
