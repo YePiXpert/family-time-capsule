@@ -11,11 +11,14 @@
 | `SOURCE_SHA` | 完整 main 提交 SHA；镜像标签、revision 标签与健康版本一致 |
 | `AI_DATA_DIR` | 数据目录；生产与 staging 必须独立 |
 | `APP_PORT` | 宿主端口；staging 使用验证脚本规定的隔离端口 |
+| `APP_BIND` | 除 127.0.0.1 之外的第二个监听地址（反代所在的私有网段）；必填，真实值只写私有 env |
 | `AI_MODEL` | 固定 `gpt-6-astra`，五种文字任务均为 medium |
 | `TRANSCRIBE_MODEL` | `mimo-v2.5-asr` |
 | `UPSTREAM_BASE_URL` | 两种模型共用的 HTTPS 兼容上游 |
 | `UPSTREAM_KEY_PATH` | 宿主密钥文件，Compose 只读挂载 |
-| `UPSTREAM_KEY_FILE` | 容器／直接 Node 脚本读取的密钥文件路径 |
+| `UPSTREAM_KEY_FILE` | 服务读取的密钥文件路径；Compose 已固定为挂载点，只有直接运行 Node 脚本时才需要自己设 |
+
+另有几个带默认值的变量，Compose 部署不用设：`DB_FILE`（`/data/ai.sqlite`）、`BACKUP_DIR`（`/data/backup`）、`PORT`（容器内 3000）、`FFMPEG_PATH`（镜像里的 ffmpeg）。
 
 没有旧供应商变量、模型别名或自动回退。配置缺失或模型错误在打开数据库前失败；不跟随重定向、不自动重试。密钥每次调用重读。
 
@@ -24,7 +27,15 @@
 ## 更新步骤
 
 1. 通过双端本地门禁，提交并推送 main；记录完整 SHA。
-2. 从该提交的干净快照构建镜像 `anan-ai:$SOURCE_SHA`，设置 `org.opencontainers.image.revision=$SOURCE_SHA`，避免带入工作区修改。
+2. 从该提交的干净快照构建镜像 `anan-ai:$SOURCE_SHA`，设置 `org.opencontainers.image.revision=$SOURCE_SHA`，避免带入工作区修改：
+
+```sh
+BUILD_DIR=$(mktemp -d -p /var/tmp)
+git archive "$SOURCE_SHA" server deploy | tar -x -C "$BUILD_DIR"
+docker build --label "org.opencontainers.image.revision=$SOURCE_SHA" -t "anan-ai:$SOURCE_SHA" "$BUILD_DIR/server"
+TARGET_COMPOSE="$BUILD_DIR/deploy/compose.yaml"
+```
+
 3. 使用独立目录、端口和 Compose 项目启动 staging。验证通过后停止并移除 staging。
 4. 保存旧镜像、私有环境与 Compose；停止生产写入后快照整个数据目录，包括 SQLite、WAL 和密文对象。
 5. 使用目标源码的 Compose 和私有环境启动已构建镜像：
@@ -36,7 +47,9 @@ docker compose --env-file "$SERVICE_ENV" -p anan-ai -f "$TARGET_COMPOSE" up -d -
 6. 核对镜像 revision、容器 `SOURCE_SHA`、本机及公网 `/healthz` 版本；检查匿名接口仍拒绝，家庭、成员、设备、清单、额度与原值一致。健康地址取私有配置，不在手机 API 前缀后拼接。
 7. 失败则停止新容器，将切换前的数据、配置和镜像一起恢复；成功后记录证据并更新 HANDOFF。回滚材料留在私有部署目录。
 
-日常 `backup.sh` 只做 SQLite 在线备份、保留七份，不含密文对象；完整迁移／回滚必须另存对象库。手机仍应定期导出完整备份。
+日常 `backup.sh` 只做 SQLite 在线备份、保留七份，不含密文对象；完整迁移／回滚必须另存对象库。手机仍应定期导出完整备份。它由宿主的 systemd 定时器每天运行一次（`ExecStart` 指向本仓库里的 `deploy/backup.sh`）；容器名、数据目录和备份目录的默认值对应生产，可用 `ANAN_CONTAINER`、`AI_DATA_DIR`、`BACKUP_DAILY_DIR` 覆盖。
+
+从不带 `APP_BIND` 的旧 Compose 升级时，先在私有 env 里补上这台机器原来的第二个监听地址，否则 Compose 会直接报错、不会启动。
 
 ## 验证
 
@@ -49,6 +62,8 @@ python3 server/scripts/verify-service.py --allow-live --skip-text --skip-transcr
 ```
 
 这条命令会写合成测试数据，但不调用模型。移除 skip 选项会产生至多五次文字与一次转写调用，须在已授权范围内执行。`probe-text.ts --allow-live` 也会产生五次文字调用。均使用合成资料、不输出正文；不要在命令行传密钥。
+
+反代的请求体上限用 `server/scripts/probe-upload-limit.py --base <API 前缀>` 探：不带账号时只看反代是否放行 4／9 MB（期望都是服务自己的 JSON 401）；加 `--authenticated --container <容器>` 会在容器里临时登记一台探测设备真上传，结束时撤销它，不删任何清单。地址取私有配置。
 
 有代理变量时，仅对本机验证移除大小写的 http_proxy／https_proxy／all_proxy，并设置 NO_PROXY；git 和 gh 保留所需代理。开发机临时空间不足时使用 `/var/tmp`。
 
