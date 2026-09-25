@@ -38,7 +38,8 @@ vi.mock("../src/local/ui", () => ({
   dateLabel: (date: string) => date.slice(0, 10), monthLabel: (month: string) => month,
   messageOf: (e: Error) => e.message, useStyles: () => ({}), useVolumeWidth: () => 140,
 }));
-vi.mock("../src/local/Shelf", () => ({ coverForRecords: vi.fn(), Volume: "Volume" }));
+vi.mock("../src/local/ShelfCards", () => ({ coverForRecords: vi.fn() }));
+vi.mock("../src/local/Volume", () => ({ Volume: "Volume" }));
 vi.mock("../src/local/NoteCard", () => ({ NoteCard: "NoteCard" }));
 vi.mock("../src/local/BookBinder", () => ({ planBook: vi.fn(), useBookBinder: vi.fn() }));
 vi.mock("../src/local/BookPreview", () => ({ BookPreview: "BookPreview" }));
