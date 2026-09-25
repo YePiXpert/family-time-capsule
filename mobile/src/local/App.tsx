@@ -73,15 +73,8 @@ import { RecapScreen } from "./RecapScreen";
 import { Firsts, Shelf, TitlePage } from "./Shelf";
 import { AlbumScreen, Picker, AlbumDetails } from "./Albums";
 import { People } from "./People";
-import {
-  Settings,
-  Profile,
-  Appearance,
-  Storage,
-  Backup,
-  Restore,
-  ReadableCopy,
-} from "./Settings";
+import { Settings, Profile, Appearance } from "./Settings";
+import { Storage, Backup, Restore, ReadableCopy } from "./BackupPages";
 import { Editor } from "./Editor";
 import { RecordScreen } from "./Record";
 import { MediaScreen } from "./Media";

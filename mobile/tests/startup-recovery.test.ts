@@ -85,10 +85,8 @@ vi.mock("../src/local/RecapScreen", () => ({ RecapScreen: "RecapScreen" }));
 vi.mock("../src/local/Shelf", () => ({ Firsts: "Firsts", Shelf: "Shelf", TitlePage: "TitlePage" }));
 vi.mock("../src/local/Albums", () => ({ AlbumScreen: "AlbumScreen", Picker: "Picker", AlbumDetails: "AlbumDetails" }));
 vi.mock("../src/local/People", () => ({ People: "People" }));
-vi.mock("../src/local/Settings", () => ({
-  Settings: "Settings", Profile: "Profile", Appearance: "Appearance", Storage: "Storage",
-  Backup: "Backup", Restore: "Restore", ReadableCopy: "ReadableCopy",
-}));
+vi.mock("../src/local/Settings", () => ({ Settings: "Settings", Profile: "Profile", Appearance: "Appearance" }));
+vi.mock("../src/local/BackupPages", () => ({ Storage: "Storage", Backup: "Backup", Restore: "Restore", ReadableCopy: "ReadableCopy" }));
 vi.mock("../src/local/Editor", () => ({ Editor: "Editor" }));
 vi.mock("../src/local/Record", () => ({ RecordScreen: "RecordScreen" }));
 vi.mock("../src/local/Media", () => ({ MediaScreen: "MediaScreen" }));

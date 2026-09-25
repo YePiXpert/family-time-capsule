@@ -6,7 +6,7 @@
    `EventSource` 作为标识符出现（含换名导入、传引用）、`expo/fetch`，以及 expo-file-system 的下载上传函数都算。
    检查范围是 src、App.tsx、index.ts 与 modules/*/src 里的全部 TS／JS 源文件；注释不算。
 2. 任何 src 文件都不得含子串 `serverUrl`、`credentials`——本机记录不认识账号这回事。
-3. `src/local/**` 里只有 LOCAL_MAY_IMPORT_SYNC 列出的两个界面文件可以 import `../sync/` 或 `../family/`：
+3. `src/local/**` 里只有 LOCAL_MAY_IMPORT_SYNC 列出的界面文件（入口、设置、数据与备份）可以 import `../sync/` 或 `../family/`：
    同步与家庭授权只走 `src/sync`、`src/family`，本机记录、备份与恢复的代码路径里没有网络。
 4. package.json 不得带 FORBIDDEN_DEPENDENCIES（服务端框架、账号库、网络探测）。
 5. 服务地址字面量只出现在 `src/local/brand.ts`（`SERVICE_URL`），其余文件都从那里 import。
@@ -31,7 +31,7 @@ IMPORT_OF = r'''(?:\bfrom\s+|\bimport\s+|\bimport\s*\(\s*|\brequire\s*\(\s*)'''
 ACCOUNT_WORDS = ('serverUrl', 'credentials')
 SHARED_LOCAL_TSX = ('ui', 'context')
 LOCAL_TSX_IMPORT = re.compile(IMPORT_OF + r'''["']\.\./local/([^/"']+)["']''')
-LOCAL_MAY_IMPORT_SYNC = ('src/local/App.tsx', 'src/local/Settings.tsx')
+LOCAL_MAY_IMPORT_SYNC = ('src/local/App.tsx', 'src/local/Settings.tsx', 'src/local/BackupPages.tsx')
 SYNC_IMPORT = re.compile(IMPORT_OF + r'''["']\.\./(sync|family)/''')
 SECURE_STORE_IMPORT = re.compile(IMPORT_OF + r'''["']expo-secure-store["']''')
 FORBIDDEN_DEPENDENCIES = {'next', 'better-auth', 'drizzle-orm', 'expo-network'}

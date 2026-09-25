@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { Backup, Restore } from "../src/local/Settings";
+import { Backup, Restore } from "../src/local/BackupPages";
 
 // 「数据与备份」「恢复备份」两页：钩子按槽位保存，重绘后找到真实控件触发回调；
 // 备份引擎、分卷导出、互斥全换成可观察的假件，只验证页面怎样调用它们。
