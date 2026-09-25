@@ -21,6 +21,8 @@ python3 -m unittest discover -s mobile/scripts -p 'test_*.py'
 
 装好依赖后，根目录的 `TMPDIR=/var/tmp/anan-tests npm run check` 会按同样的顺序跑完以上门禁；`check:mobile`、`check:server`、`check:scripts` 可以单独跑。
 
+性能基准不进门禁，单独跑：在 `mobile/` 里 `TMPDIR=/var/tmp/anan-tests npx vitest run -c vitest.perf.config.mts`（`PERF_SIZES=1000,10000` 限定规模，`PERF_JITLESS=1` 关掉 JIT，更接近手机上的 Hermes），`node tests/perf/report.mjs` 汇总成表。门禁里的 `tests/perf-guard.test.ts` 只卡复杂度。
+
 手机开发服务：在 `mobile/` 运行 `npm start`；原生依赖变化需要重新构建。服务端没有 lint 命令。Mock 测试不调用付费模型，真实探针见 [部署指南](../deploy/README.md)。
 
 ## 代码入口与边界

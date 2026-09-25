@@ -72,11 +72,33 @@ export const encKeyOf = (key: Uint8Array) =>
   derive(key, "anan-backup-v1/enc", 32);
 export const noncePrefixOf = (key: Uint8Array, contentSha256: string) =>
   derive(key, `anan-nonce-v1/${contentSha256}`, 20);
-export const objectIdOf = (
+/**
+ * 对象 id 只由钥匙和内容定，每次推送都要给每个素材的每一块算一遍 HKDF（一万个素材在手机上要几秒）：
+ * 按钥匙指纹记住算过的。表里只有 id，没有钥匙；换钥匙就是另一张表。
+ */
+const objectIds = new Map<string, Map<string, string>>();
+const keyIds = new WeakMap<Uint8Array, string>();
+export function objectIdOf(
   key: Uint8Array,
   contentSha256: string,
   part: number,
-) => bytesToHex(derive(key, `anan-objid-v1/${contentSha256}/${part}`, 32));
+): string {
+  let keyId = keyIds.get(key);
+  if (keyId === undefined) keyIds.set(key, (keyId = keyIdOf(key)));
+  let ids = objectIds.get(keyId);
+  if (!ids) {
+    objectIds.clear();
+    objectIds.set(keyId, (ids = new Map()));
+  }
+  const label = `${contentSha256}/${part}`;
+  let id = ids.get(label);
+  if (id === undefined) {
+    id = bytesToHex(derive(key, `anan-objid-v1/${label}`, 32));
+    if (ids.size >= 200000) ids.clear();
+    ids.set(label, id);
+  }
+  return id;
+}
 /** 12 个英文词；抄在纸上就是整份远端备份的钥匙。 */
 export const mnemonicOf = (key: Uint8Array) => entropyToMnemonic(key, wordlist);
 /** 规整空白与大小写后校验；错一个词、少一个词、校验和不对都只说一句人话。 */

@@ -43,6 +43,7 @@ import {
   type UploadItem,
 } from "./planner";
 import { SyncError, type RemoteManifest, type Transport } from "./transport";
+import { canonical, sharedRootOf } from "./merge";
 /**
  * 远端备份引擎：本机清单备份（.xmbm + blob 库）是源头，远端只是它的密文副本。
  * 备份 = 写本机清单 → 规划对象 → 问远端缺哪些 → 只传缺的 → 传清单对象与索引 → 收拾多余对象。
@@ -165,6 +166,17 @@ export function sharedLibrary(state: Library): Library {
   );
   return rest;
 }
+/**
+ * 「发出去的内容」的指纹：共享实体段加上共享的库根。只比实体段的话，只改年度寄语或宝宝资料的手机
+ * 会以为没变、一直不发布（存的字段仍叫 entitiesSha，旧版存的值对不上，升级后多发布一次）。
+ */
+export function publishedSha(entities: Uint8Array, state: Library): string {
+  const root = utf8(`\n${canonical(sharedRootOf(state))}`);
+  const bytes = new Uint8Array(entities.length + root.length);
+  bytes.set(entities);
+  bytes.set(root, entities.length);
+  return sha256Hex(bytes);
+}
 /** 本机清单是上传的唯一来源；已在远端的对象不重复传。 */
 export async function pushManifest(state: Library, deps: EngineDeps) {
   const keyId = keyIdOf(deps.key);
@@ -175,7 +187,7 @@ export async function pushManifest(state: Library, deps: EngineDeps) {
     deps.signal,
   );
   const { meta, entities } = readManifest(manifest);
-  const entitiesSha = sha256Hex(entities);
+  const entitiesSha = publishedSha(entities, state);
   const owners = blobOwners(decodeLibraryV2(meta, entities));
   const manifestSha = await hashFile(manifest);
   const manifestBytes = manifest.size;
@@ -198,8 +210,14 @@ export async function pushManifest(state: Library, deps: EngineDeps) {
     deps.onProgress?.(`正在上传 ${done}/${total}`);
   };
   if (total) deps.onProgress?.(`正在上传 0/${total}`);
+  const plansOf = new Map<string, UploadItem[]>();
+  for (const item of blobItems) {
+    const list = plansOf.get(item.sha256);
+    if (list) list.push(item);
+    else plansOf.set(item.sha256, [item]);
+  }
   for (const blob of meta.blobs) {
-    const plans = blobItems.filter((item) => item.sha256 === blob.sha256);
+    const plans = plansOf.get(blob.sha256) ?? [];
     if (!plans.some((plan) => missing.has(plan.id))) continue;
     throwIfAborted(deps.signal);
     const stored = blobFile(blob.sha256);
