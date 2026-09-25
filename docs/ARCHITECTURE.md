@@ -16,7 +16,7 @@
 | `deploy/` | Compose、环境示例和 SQLite 备份脚本。 |
 | `.github/workflows/` | `ci.yml` 日常门禁；`mobile-build.yml` 出 APK／未签名 IPA，跑原生回归，打标签时发布 Release。 |
 
-`mobile/scripts/verify-local-boundary.py` 在 CI 里检查这些规则：
+`mobile/scripts/verify-local-boundary.py` 在 CI 里检查这些规则。检查范围是 `src`、`App.tsx`、`index.ts` 和 `modules/*/src` 里的全部 TS／JS 文件；网络调用按标识符匹配，换名导入、`expo/fetch`、文件系统下载都算，`import()` 和 `require()` 也算引入：
 
 - 只有上面三个文件可以联网；
 - `src/local` 不读钥匙串里的家庭凭据；
@@ -51,7 +51,7 @@
   - `proof`：服务端只存它的哈希，用来核对恢复请求。
   - `wrap`：用 XChaCha20-Poly1305 封 K，得到恢复包，AAD 绑定家庭、钥匙指纹和恢复版本。
 
-  拿到 `proof` 推不出 `wrap`，所以服务端解不开恢复包。所有管理者手机都丢了时，用 `POST /recovery/claim` 找回；只有真的解开远端最新那份清单才算找回成功。重新生成恢复码后，旧的立即作废。
+  拿到 `proof` 推不出 `wrap`，所以服务端解不开恢复包。所有管理者手机都丢了时，用 `POST /recovery/claim` 找回；只有真的解开远端最新那份清单才算找回成功。重新生成恢复码时，手机先显示新的一套、让管理者抄写并核对，然后才提交；提交成功，旧的立即作废。响应丢了可以原样重交，服务端当作成功。
 - **停用与退出**：管理者可以停用设备；设备一年没用自动失效；最后一台有效的管理者设备不能停用，也不能退出。「退出这个家庭」会作废本机令牌、撤下这台设备的清单、清掉本机的钥匙与凭据。只有服务端确认之后，本机才清除这些东西。已经下载到别的手机上的内容收不回来。
 
 ## 同步
