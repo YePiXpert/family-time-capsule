@@ -28,16 +28,12 @@ import {
   type ArchiveProgress,
 } from "./archive";
 import { healthFile } from "./health-file";
-import { FamilyCard } from "../sync/FamilyCard";
 import { isLocalBusy, isSyncRunning, markLocalBusy } from "../sync/status";
 import { conflictMediaIds } from "../sync/conflicts";
 import {
   forgetMergeHistory,
   readConflicts,
-  readRemoteState,
   subscribeSyncFiles,
-  writeRemoteState,
-  type RemoteState,
 } from "../sync/state";
 import { changeAvgMs } from "./health";
 import { APP_NAME, CHILD_FALLBACK } from "./brand";
@@ -387,51 +383,12 @@ export function Profile() {
   );
 }
 export function Appearance() {
-  const sync = useSyncStatus();
   const state = useLibrary(),
     store = useStore(),
     s = useStyles();
   const { colors } = useTheme();
   const [error, setError] = useState("");
   const [lockAvailable, setLockAvailable] = useState(false);
-  const [remote, setRemote] = useState<RemoteState | null>(null);
-  const [savingAutoSync, setSavingAutoSync] = useState(false);
-  useEffect(() => {
-    let live = true;
-    let version = 0;
-    const refresh = () => {
-      const request = ++version;
-      void readRemoteState()
-        .then((next) => {
-          if (live && request === version) setRemote(next);
-        })
-        .catch((e) => {
-          if (live && request === version) setError(messageOf(e));
-        });
-    };
-    const unsubscribe = subscribeSyncFiles(refresh);
-    refresh();
-    return () => {
-      live = false;
-      unsubscribe();
-    };
-  }, []);
-  const changeAutoSync = async (value: boolean) => {
-    setSavingAutoSync(true);
-    setError("");
-    try {
-      const current = await readRemoteState();
-      if (current) {
-        const next = { ...current, autoSync: value };
-        writeRemoteState(next);
-        setRemote(next);
-      }
-    } catch (e) {
-      setError(messageOf(e));
-    } finally {
-      setSavingAutoSync(false);
-    }
-  };
   useEffect(() => {
     void (async () => {
       const hasHardware = await LocalAuthentication.hasHardwareAsync();
@@ -503,30 +460,6 @@ export function Appearance() {
           }}
         />
       </View>
-      {sync.joined && (
-        <>
-          <SectionHeader title="家人一起写" />
-          <View style={s.between}>
-            <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
-              <Text>回到应用时自动同步</Text>
-              <Text style={s.muted}>
-                回到应用、保存一段时光后 30 秒，自动与家人合一次。照片一起下，流量敏感时可以关掉，手动点「现在同步」照常。
-              </Text>
-            </View>
-            <Switch
-              accessibilityLabel="回到应用时自动同步"
-              testID="auto-sync-toggle"
-              value={remote?.autoSync === true}
-              disabled={!remote || savingAutoSync}
-              trackColor={{ false: colors.line, true: colors.accentSoft }}
-              thumbColor={remote?.autoSync ? colors.accent : undefined}
-              onValueChange={(value) => {
-                void changeAutoSync(value);
-              }}
-            />
-          </View>
-        </>
-      )}
       <ErrorText message={error} />
     </Page>
   );
@@ -647,8 +580,6 @@ export function Backup() {
     store = useStore(),
     s = useStyles();
   const [busy, setBusy] = useState(false),
-    // 家人一起写卡里的同步也在读 blob 库：它在跑时这一页的本机操作一样要等。
-    [remoteRunning, setRemoteRunning] = useState(false),
     [message, setMessage] = useState(""),
     [error, setError] = useState(""),
     [stopper, setStopper] = useState<AbortController | null>(null),
@@ -656,7 +587,7 @@ export function Backup() {
     [backups, setBackups] = useState(() => listLocalBackups());
   const exportedDays = daysSinceExport(state);
   const [archiving, setArchiving] = useState(false);
-  const locked = busy || remoteRunning || sync.running || archiving;
+  const locked = busy || sync.running || archiving;
   const refreshList = () => setBackups(listLocalBackups());
   const perform = async (fn: () => Promise<void>) => {
     // 确认框可能在同步开始前打开，真正执行时再检查一次。
@@ -881,13 +812,6 @@ export function Backup() {
         </Card>
       )}
       <ArchiveCard busy={locked} onRunningChange={setArchiving} />
-      <FamilyCard
-        busy={busy || archiving}
-        onRunningChange={(running) => {
-          setRemoteRunning(running);
-          if (!running) refreshList();
-        }}
-      />
     </Page>
   );
 }

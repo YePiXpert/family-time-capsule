@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import time
 import xml.etree.ElementTree as ET
-from android_ui import PACKAGE as package, adb, find, hierarchy, screencap, scrolls_around, seek, stats, tap, tap_last, tap_seek, tap_shelf, wait_until_drawn
+from android_ui import PACKAGE as package, adb, find, hierarchy, screencap, scrolls_around, stats, tap, tap_last, tap_seek, tap_shelf, wait_until_drawn
 
 p=argparse.ArgumentParser();p.add_argument('apk');p.add_argument('--output',type=Path,required=True);args=p.parse_args();args.output.mkdir(parents=True,exist_ok=True)
 def shot(name,fresh=False):
@@ -54,10 +54,15 @@ try:
     restart();adb('shell','wm','size','320x720');find('我的');shot('home-320')
     tap('我的')
     # 家庭与设备：没加入时「加入已有家庭／开始一个家庭／用恢复码找回」，不联网也打得开。
-    tap('家庭与设备');find('family-out');find('family-join');find('family-recover');shot('family-out-320');familyOffline=True;adb('shell','input','keyevent','4')
+    # 同步卡只在已加入时出现：没加入时这一页没有任何同步、上传入口。
+    tap('家庭与设备');find('family-out');find('family-join');find('family-recover')
+    assert not any(n.get('resource-id') in ('remote-card','remote-backup','remote-first-sync') for n in hierarchy(fresh=True).iter('node')),'Signed-out family page must not offer sync'
+    shot('family-out-320');familyOffline=True;remoteCardOffline=True;adb('shell','input','keyevent','4')
     tap('外观设置');tap('深色');shot('dark-320')
-    # 远端备份卡：没加入家庭时只有一句说明与「去加入家庭」，没有任何上传入口。
-    restart();tap('我的');tap('备份与恢复');seek('remote-card');seek('remote-family');shot('backup-remote-offline');remoteCardOffline=True;phase('Settings')
+    # 备份页不再挂家人卡：同步只在「家庭与同步」。
+    restart();tap('我的');tap('备份与恢复');find('backup-export')
+    assert not any(n.get('resource-id')=='remote-card' for n in hierarchy(fresh=True).iter('node')),'Backup page must not carry the sync card'
+    shot('backup-offline');phase('Settings')
     # 备份闭环：导出 → 删一条记录 → 从本机保留的备份恢复 → 内容还原。
     restart();tap('我的');tap('备份与恢复');tap('backup-export')
     time.sleep(3);adb('shell','input','keyevent','4');time.sleep(1)  # 退出系统分享面板
