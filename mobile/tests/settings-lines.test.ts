@@ -8,6 +8,8 @@ it("家庭与同步只用一套说法：没加入、已加入没同步、同步�
   expect(familyLine(undefined, sync({}))).toBeUndefined();
   expect(familyLine(false, sync({ joined: true, conflicts: 2 }))).toBe("还没加入家庭");
   expect(familyLine(true, sync({}))).toBe("已加入，还没完成第一次同步");
+  // 第一次同步半路断网：已标成加入，但还没有一次完整同步，不能只说「已加入」。
+  expect(familyLine(true, sync({ joined: true }))).toBe("已加入，还没完成第一次同步");
   expect(familyLine(true, sync({ joined: true, running: true }))).toBe("正在同步…");
   expect(familyLine(true, sync({ joined: true, conflicts: 2, running: true }))).toBe("有 2 段两台手机都改过");
   expect(familyLine(true, sync({ joined: true, lastError: "离线" }))).toBe("上次同步没成功，点开看看");

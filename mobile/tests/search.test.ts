@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { emptyContent, type LocalRecord } from "../src/local/model";
-import { searchRecords } from "../src/local/search";
+import { SEARCH_LIMIT, searchRecords } from "../src/local/search";
 
 const record = (
   id: string,
@@ -99,4 +99,21 @@ describe("落款筛选", () => {
     expect(searchRecords(signed, "", { by: "外婆" })).toEqual([]);
     expect(searchRecords(signed, "").map((r) => r.id)).toEqual(["d", "m", "n"]);
   });
+});
+
+it("默认最多列 100 段，调用方可多取一条判断还有更早的", () => {
+  const many = Array.from({ length: 105 }, (_, i) => ({
+    id: `m${String(i).padStart(3, "0")}`,
+    title: "",
+    text: "散步",
+    location: "",
+    date: `2020-01-01T00:00:${String(i % 60).padStart(2, "0")}.000Z`,
+    first: false,
+    mediaIds: [],
+    coverId: null,
+    revision: 1,
+    updatedAt: "2020-01-01T00:00:00.000Z",
+  }));
+  expect(searchRecords(many, "散步")).toHaveLength(SEARCH_LIMIT);
+  expect(searchRecords(many, "散步", {}, {}, SEARCH_LIMIT + 1)).toHaveLength(SEARCH_LIMIT + 1);
 });

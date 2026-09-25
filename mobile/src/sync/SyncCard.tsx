@@ -91,6 +91,23 @@ export function SyncCard({ busy }: { busy: boolean }) {
     };
   }, []);
   useFocusEffect(refresh);
+  // 页面开着时自动同步跑完（回到应用、保存后）：上次同步、错误与冲突数跟着更新。自己点的那轮由 perform 收尾。
+  useEffect(() => {
+    if (sync.running || controller.current) return;
+    let live = true;
+    void Promise.all([readRemoteState(), readConflicts()])
+      .then(([state, items]) => {
+        if (!live) return;
+        setRemote((old) => (old === undefined ? old : state));
+        setConflicts(items.length);
+      })
+      .catch(() => {
+        // 读不出来就留着原样，下次回到页面再读。
+      });
+    return () => {
+      live = false;
+    };
+  }, [sync.running, sync.lastSyncAt, sync.lastError, sync.conflicts]);
   // 离开这一页就停止还在跑的同步：停止键跟着卡一起消失，不能让它在背后继续。
   useEffect(() => {
     const active = controller;

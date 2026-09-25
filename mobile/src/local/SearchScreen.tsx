@@ -3,7 +3,7 @@ import { FlatList, View } from "react-native";
 import { useLibrary } from "./context";
 import { sortedRecords, yearKey } from "./model";
 import { useNav, type Props } from "./navigation";
-import { searchRecords, type MediaFilter } from "./search";
+import { SEARCH_LIMIT, searchRecords, type MediaFilter } from "./search";
 import { RecordCard } from "./Home";
 import {
   Button,
@@ -26,7 +26,7 @@ export function SearchScreen(_: Props<"Search">) {
     [person, setPerson] = useState(""),
     [by, setBy] = useState("");
   const { records: recordMap, media: mediaMap, persons: personMap } = state;
-  const { results, years, persons, writers } = useMemo(() => {
+  const { found, years, persons, writers } = useMemo(() => {
     const all = sortedRecords({ records: recordMap });
     const byCount = new Map<string, number>();
     for (const r of all) if (r.by) byCount.set(r.by, (byCount.get(r.by) ?? 0) + 1);
@@ -34,7 +34,8 @@ export function SearchScreen(_: Props<"Search">) {
       Object.values(mediaMap).map((m) => [m.id, m.kind] as const),
     );
     return {
-      results: searchRecords(
+      // 多取一条，才知道是不是还有更早的没列出来。
+      found: searchRecords(
         all,
         query,
         {
@@ -46,6 +47,7 @@ export function SearchScreen(_: Props<"Search">) {
           by: by || undefined,
         },
         kinds,
+        SEARCH_LIMIT + 1,
       ),
       // 与筛选同一口径按本地年份：UTC+8 元旦凌晨的记录不能挂到上一年的标签下。
       years: [...new Set(all.map((r) => yearKey(r.date)))].sort((a, b) =>
@@ -59,6 +61,8 @@ export function SearchScreen(_: Props<"Search">) {
         .map(([name]) => name),
     };
   }, [recordMap, mediaMap, personMap, query, first, quote, media, year, person, by]);
+  const more = found.length > SEARCH_LIMIT;
+  const results = more ? found.slice(0, SEARCH_LIMIT) : found;
   const filtered =
     query.trim() ||
     first ||
@@ -147,6 +151,13 @@ export function SearchScreen(_: Props<"Search">) {
               onPress={() => nav.navigate("Record", { id: item.id })}
             />
           )}
+          ListFooterComponent={
+            more ? (
+              <Text style={[s.muted, { textAlign: "center" }]}>
+                {`只列出最近的 ${SEARCH_LIMIT} 段。选个年份或加一项筛选，能看到更早的。`}
+              </Text>
+            ) : null
+          }
           ListEmptyComponent={
             <View style={s.empty}>
               <Text style={s.heading}>

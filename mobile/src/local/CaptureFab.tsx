@@ -5,7 +5,7 @@ import { GlassView } from "expo-glass-effect";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { JournalIcon } from "../components/JournalIcon";
 import { useStore } from "./context";
-import { useNav } from "./navigation";
+import { useFocusGuard, useNav } from "./navigation";
 import { beginDraft } from "./services";
 import {
   ErrorText,
@@ -37,6 +37,7 @@ export function CaptureFab() {
   const insets = useSafeAreaInsets();
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  const guard = useFocusGuard();
   const press = usePressScale(
     liquid ? MOTION.glassPressScale : MOTION.pressScale,
   );
@@ -66,11 +67,15 @@ export function CaptureFab() {
           accessibilityLabel="记一刻"
           disabled={busy}
           onPress={() => {
+            if (!guard.take()) return;
             hapticLight();
             setBusy(true);
             void beginDraft(store)
               .then((draftId) => nav.navigate("Editor", { draftId }))
-              .catch((e) => setError(messageOf(e)))
+              .catch((e) => {
+                guard.release();
+                setError(messageOf(e));
+              })
               .finally(() => setBusy(false));
           }}
           onPressIn={press.onPressIn}

@@ -576,8 +576,10 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                   value={new Date(draft.content.date)}
                   mode="date"
                   display={Platform.OS === "ios" ? "spinner" : "default"}
-                  onChange={(_, date) => {
+                  onChange={(event, date) => {
                     if (Platform.OS !== "ios") setDateOpen(false);
+                    // 安卓按「取消」也会带着原日期回调：不算手选，之后加的照片仍按拍摄日期定日子。
+                    if (event.type === "dismissed") return;
                     if (date) change({ date: date.toISOString() });
                   }}
                 />
@@ -752,6 +754,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                             kind="text"
                             compact
                             testID="editor-media-cover"
+                            disabled={busy}
                             onPress={() =>
                               change({ coverId: pickedMedia.id })
                             }
@@ -763,6 +766,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                         danger
                         compact
                         testID="editor-media-remove"
+                        disabled={busy}
                         onPress={() => removeMedia(pickedMedia.id)}
                       />
                     </View>
@@ -853,6 +857,8 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                   label="标题"
                   accessibilityLabel="标题（可选）"
                   testID="editor-title"
+                  // 保存途中改的字赶不上这次保存，关页时还会被丢掉：和正文一样先锁住。
+                  editable={!busy}
                   placeholder="例如：第一次翻身"
                   value={draft.content.title}
                   onChangeText={(title) => change({ title })}
@@ -861,6 +867,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                   label="地点"
                   accessibilityLabel="地点（可选）"
                   testID="editor-location"
+                  editable={!busy}
                   placeholder="例如：外婆家"
                   value={draft.content.location}
                   onChangeText={(location) => change({ location })}
@@ -885,6 +892,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                         compact
                         chipTestID={(id) => `person-chip-${id}`}
                         onToggle={(id) => {
+                          if (busy) return;
                           const currentIds = draft.content.personIds ?? [];
                           change({
                             personIds: currentIds.includes(id)
@@ -1027,8 +1035,13 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                   saveRecord(s, draft.id, newId(), now()),
                 );
                 hapticSuccess();
+                // merge：从「随便翻翻」进来的阅读页改完回去，还留着「再翻一页」。
                 exitWith(() =>
-                  navigation.popTo("Record", { id: record.id }));
+                  navigation.popTo(
+                    "Record",
+                    { id: record.id },
+                    { merge: true },
+                  ));
               });
             }}
           />

@@ -9,7 +9,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLibrary, useStore } from "./context";
 import { CaptureFab, FAB_INSET, FAB_SIZE } from "./CaptureFab";
 import { monthKey, type LocalRecord, type Stored, compareDates } from "./model";
-import { useNav, type Props } from "./navigation";
+import { useFocusGuard, useNav, type Props } from "./navigation";
 import { recordMatches } from "./search";
 import { beginDraft } from "./services";
 import {
@@ -180,6 +180,7 @@ export function Month({ route }: Props<"Month">) {
   const columns = large || fontScale >= 1.3 ? 1 : width >= 600 ? 3 : 2;
   const tileSize =
     (width - insets.left - insets.right - 40 - 12 * (columns - 1)) / columns;
+  const captureGuard = useFocusGuard();
   const [query, setQuery] = useState(""),
     [searchOpen, setSearchOpen] = useState(false),
     [error, setError] = useState("");
@@ -283,10 +284,14 @@ export function Month({ route }: Props<"Month">) {
                   title="记一刻"
                   icon="edit"
                   onPress={() => {
+                    if (!captureGuard.take()) return;
                     hapticLight();
                     void beginDraft(store)
                       .then((draftId) => nav.navigate("Editor", { draftId }))
-                      .catch((e) => setError(messageOf(e)));
+                      .catch((e) => {
+                        captureGuard.release();
+                        setError(messageOf(e));
+                      });
                   }}
                 />
               </View>

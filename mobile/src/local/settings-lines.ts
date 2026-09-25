@@ -15,7 +15,10 @@ export function familyLine(
   if (sync.running) return "正在同步…";
   if (sync.lastError) return "上次同步没成功，点开看看";
   if (!sync.joined) return "已加入，还没完成第一次同步";
-  return sync.lastSyncAt ? `上次同步 ${dateTimeLabel(sync.lastSyncAt)}` : "已加入";
+  // 第一次同步半路断了：清单已经标成加入，但还没有一次完整同步。
+  return sync.lastSyncAt
+    ? `上次同步 ${dateTimeLabel(sync.lastSyncAt)}`
+    : "已加入，还没完成第一次同步";
 }
 
 /** 数据与备份一行的副题：上次完整备份与本机照片录音占用。 */
