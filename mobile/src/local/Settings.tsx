@@ -631,12 +631,16 @@ function useBackupActions() {
       return false;
     }
     markLocalBusy(true);
-    // 上次导出留在缓存里给分享目标慢慢读的那一卷，到这时早读完了：先腾出空间再备份或恢复。
-    purgeExports();
     setBusy(true);
     setError("");
     setMessage("");
     try {
+      // 上次导出留在缓存里给分享目标慢慢读的那一卷，到这时早读完了：先腾出空间再备份或恢复。
+      try {
+        purgeExports();
+      } catch {
+        // 腾不出来只是少一点空间；真不够时后面的空间预检会说清楚。
+      }
       await fn();
     } catch (e) {
       if (e instanceof BackupStopped) setMessage(e.message);

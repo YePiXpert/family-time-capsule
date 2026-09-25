@@ -116,12 +116,17 @@ function upgradeState(v1: RemoteStateV1, now: string): RemoteState {
   };
 }
 async function readJson(file: File): Promise<unknown> {
-  if (!file.exists) return null;
-  try {
-    return JSON.parse(await file.text()) as unknown;
-  } catch {
-    return null;
-  }
+  const parse = async (f: File) => {
+    try {
+      return JSON.parse(await f.text()) as unknown;
+    } catch {
+      return null;
+    }
+  };
+  if (file.exists) return parse(file);
+  // writeJson 先删旧文件再换名：中间被打断时，完整的新内容只在 .part 里。
+  const part = new File(syncDirectory, `${file.name}.part`);
+  return part.exists ? parse(part) : null;
 }
 /** 读不出、认不得的状态文件一律当作「没加入」：不让一份坏 JSON 把同步卡死。 */
 export async function readRemoteState(

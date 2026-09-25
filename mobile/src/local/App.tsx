@@ -90,7 +90,7 @@ import { LetterScreen } from "./LetterScreen";
 import { Quotes } from "./Quotes";
 import { receiveShares } from "./services";
 import { healthFile } from "./health-file";
-import { CoveredContext, LockedContext, unlockFailureMessage } from "./lock";
+import { attemptUnlock, CoveredContext, LockedContext } from "./lock";
 const Stack = createNativeStackNavigator<Routes>();
 /** 解锁门与欢迎页：一张卡放在屏幕正中；字大、屏矮放不下时照常可滑。 */
 function CenteredPage({ children }: { children: ReactNode }) {
@@ -123,16 +123,14 @@ function LockGate({ onUnlock }: { onUnlock: () => void }) {
     setBusy(true);
     setError("");
     try {
-      const result = await LocalAuthentication.authenticateAsync({
-        promptMessage: "解锁成长记",
-        cancelLabel: "取消",
-      });
-      if (result.success) onUnlock();
-      else setError(unlockFailureMessage(result.error));
-    } catch {
-      // 设备未设置任何锁屏方式时不把用户锁死在门外。
-      setError("此设备没有可用的锁屏验证，已暂时放行。");
-      onUnlock();
+      const failure = await attemptUnlock(() =>
+        LocalAuthentication.authenticateAsync({
+          promptMessage: "解锁成长记",
+          cancelLabel: "取消",
+        }),
+      );
+      if (failure === null) onUnlock();
+      else setError(failure);
     } finally {
       setBusy(false);
     }

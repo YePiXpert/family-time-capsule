@@ -238,7 +238,8 @@ export function FamilyScreen({ navigation }: Props<"Family">) {
     };
   }, [api, step]);
   const run = async (fn: (signal: AbortSignal) => Promise<void>) => {
-    if (busy) return;
+    // busy 要等下一次渲染才变；同一帧连点两下时靠 controller 挡住第二下，免得它接管停止键。
+    if (busy || controller.current) return;
     const abort = new AbortController();
     controller.current = abort;
     setBusy(true);
