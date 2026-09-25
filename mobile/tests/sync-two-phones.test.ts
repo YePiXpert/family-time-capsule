@@ -282,6 +282,28 @@ it("草稿与只被草稿用到的照片不进家里的清单；记录、照片�
   expect(bytesOf(again, draftMedia.image!.id)?.equals(draftMedia.image!.bytes)).toBe(true);
 }, 120000);
 
+it("从草稿移出或随草稿放弃的照片也不发到家里", async () => {
+  const key = new Uint8Array(randomBytes(16));
+  const mom = await pair({ id: randomUUID(), name: `妈妈${randomUUID().slice(0, 4)}`, role: "member" }, "mom-discard");
+  const tA = transportOf(() => adminToken);
+  const tB = transportOf(() => mom.token);
+  const a = await openPhone();
+  await addRecord(a, "keep", { photo: 80 });
+  const dropped = await addRecord(a, "gone", { text: "想了想不留", photo: 81, draftOnly: true });
+  // 编辑页「放弃」只删草稿，照片还在本机素材里、谁也不引用。
+  await a.store.change((s) => { delete s.drafts.gone; });
+  expect(a.store.get().media[dropped.image!.id]).toBeDefined();
+  await a.family.joinFamily(a.store, key, { transport: tA });
+  const b = await openPhone();
+  await b.family.joinFamily(b.store, key, { transport: tB });
+  const aEntry = (await tB.manifests()).find((e) => e.deviceName === "dad-1")!;
+  const man = await b.engine.fetchManifestOf(aEntry, { transport: tB, key });
+  const lib = b.format.decodeLibraryV2(man.meta, man.entities);
+  expect(Object.keys(lib.records)).toEqual(["r-keep"]);
+  expect(lib.media[dropped.image!.id]).toBeUndefined();
+  const sha = createHash("sha256").update(dropped.image!.bytes).digest("hex");
+  expect((await tB.missing([objectIdOf(key, sha, 0)])).size).toBe(1);
+}, 120000);
 it("上传中途断线再重试：不重复上传；下载中途断线不动本机，重试后附件逐字节一致", async () => {
   const key = new Uint8Array(randomBytes(16));
   const mom = await pair({ id: randomUUID(), name: `妈妈${randomUUID().slice(0, 4)}`, role: "member" }, "mom-b2");

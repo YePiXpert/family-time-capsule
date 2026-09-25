@@ -889,12 +889,14 @@ export async function restoreBackup(
     if (restored)
       for (const m of Object.values(restored.media)) deleteMediaFiles(m);
     // 没换成：现在的内容原样还在，这一轮留的「恢复前」只是它的重复，不占恢复记录的位置。
-    try {
-      for (const file of priors) if (file.exists) file.delete();
-      collectBlobs();
-    } catch {
-      // 删不掉只是多一份恢复记录。
-    }
+    // 库已经不是开始时那份（换过了才报错，或恢复途中一直有新写入）就一份都不删。
+    if (store.get() === snapshot)
+      try {
+        for (const file of priors) if (file.exists) file.delete();
+        collectBlobs();
+      } catch {
+        // 删不掉只是多一份恢复记录。
+      }
     throw e;
   }
   // 中途又重新备份过：只留最后那份（它包含前几份之后写进来的内容）。

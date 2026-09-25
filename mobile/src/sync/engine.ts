@@ -145,11 +145,11 @@ export async function assertSameKey(deps: EngineDeps): Promise<string> {
   return keyId;
 }
 /**
- * 发到家里的那份库：草稿只在这台手机上（加入页与同步卡都这样说），只被草稿用到的照片、录音也不传。
- * 家人合并本来就不看别人清单里的草稿；其他素材原样留着，校验与引用不受影响。
+ * 发到家里的那份库：草稿只在这台手机上（加入页与同步卡都这样说），素材只发共享内容用到的——
+ * 草稿里的、从草稿移出或随草稿放弃的照片录音都不传。家人合并只要共享实体引用到的素材，
+ * 本来就不看别人清单里的草稿；校验要求的记录、信、头像素材都在这里面。
  */
 export function sharedLibrary(state: Library): Library {
-  if (!Object.keys(state.drafts).length) return state;
   const rest: Library = { ...state, drafts: {} };
   const used = new Set([
     ...referencedMedia(rest),
@@ -160,15 +160,9 @@ export function sharedLibrary(state: Library): Library {
     ...Object.values(rest.series).flatMap((x) => x.items.map((i) => i.mediaId)),
     ...Object.values(rest.yearCovers),
   ]);
-  const draftOnly = new Set(
-    Object.values(state.drafts)
-      .flatMap((d) => [...d.content.mediaIds, ...(d.content.coverId ?? [])])
-      .filter((id) => !used.has(id)),
+  rest.media = Object.fromEntries(
+    Object.entries(state.media).filter(([id]) => used.has(id)),
   );
-  if (draftOnly.size)
-    rest.media = Object.fromEntries(
-      Object.entries(state.media).filter(([id]) => !draftOnly.has(id)),
-    );
   return rest;
 }
 /** 本机清单是上传的唯一来源；已在远端的对象不重复传。 */
