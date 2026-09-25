@@ -32,7 +32,7 @@ python3 -m unittest discover -s mobile/scripts -p 'test_*.py'
 | `server/` | 设备鉴权、密文存储、AI 代理和用量 |
 | `.github/workflows/` | 日常 CI 与原生安装包构建 |
 
-手机唯一服务地址在 `brand.ts`，部署与上游值留在私有配置。家庭钥匙不进入 Library 或普通备份；恢复秘密不持久化。加密协议设计见 [家庭与设备](plans/PLAN-FAMILY-DEVICES.md)。
+手机唯一服务地址在 `brand.ts`，部署与上游值留在私有配置。家庭钥匙不进入 Library 或普通备份；恢复秘密不持久化。加密协议设计见 [家庭与设备](history/plans/PLAN-FAMILY-DEVICES.md)。
 
 ## 易错约束
 
@@ -67,4 +67,4 @@ gh workflow run mobile-build.yml --ref main -f source_sha="$SOURCE_SHA"
 
 README 放使用入口；HANDOFF 只记当前版本、部署、验证和待办；CHANGELOG 记版本行为；部署指南只写可复用步骤。不要把会话流水账或旧发布哈希堆回首页。
 
-`docs/plans/`、`PROJECT-AUDIT.md` 与 MiMo 适配记录是历史设计证据，其中的旧状态、命令和待办不作为当前操作依据。当前范围与状态以 PRODUCT、HANDOFF 为准。
+`docs/history/`（旧计划、全项目审查、收尾记录与 MiMo 适配，见[索引](history/README.md)）是历史设计证据，其中的旧状态、命令和待办不作为当前操作依据。当前范围与状态以 PRODUCT、HANDOFF 为准。
