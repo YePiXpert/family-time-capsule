@@ -3,6 +3,8 @@
  * 首页一屏放下：年份、月册、专题与信都收进一条横着翻的书架，不再一段段往下排。
  */
 
+import { monthKey, yearKey } from "./model";
+
 /** 书架横条上的一本书：只描述种类与顺序，长相交给 Shelf.tsx。 */
 export type ShelfTile =
   | { kind: "year"; year: string }
@@ -84,4 +86,35 @@ export function heroItems<T extends { id: string; date: string }>(
     .slice(0, limit)
     .map((record) => ({ record }));
   return [...anniversaries, ...recent];
+}
+
+export type ShelfIndex<T> = {
+  /** 出现过的月份与年份，新的在前（跟着记录的顺序）。 */
+  months: string[];
+  years: string[];
+  firsts: number;
+  quotes: number;
+  byMonth: ReadonlyMap<string, readonly T[]>;
+};
+/**
+ * 书架要的按月、按年汇总，对已排好的记录走一趟。书架在编辑页底下一直挂着，草稿每存一次、
+ * 同步状态每变一次都重渲染：调用方按记录数组记住它（sortedRecords 的结果引用稳定）。
+ */
+export function shelfIndex<
+  T extends { date: string; first?: boolean; quote?: boolean },
+>(records: readonly T[]): ShelfIndex<T> {
+  const byMonth = new Map<string, T[]>(),
+    years = new Set<string>();
+  let firsts = 0,
+    quotes = 0;
+  for (const record of records) {
+    const month = monthKey(record.date);
+    const list = byMonth.get(month);
+    if (list) list.push(record);
+    else byMonth.set(month, [record]);
+    years.add(yearKey(record.date));
+    if (record.first) firsts++;
+    if (record.quote) quotes++;
+  }
+  return { months: [...byMonth.keys()], years: [...years], firsts, quotes, byMonth };
 }

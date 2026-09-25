@@ -58,7 +58,7 @@ export function shelfMemoOthers(state: Library, day: string) {
 /**
  * Shelf.tsx:941-1011 与 1053-1066（每张月册）、1140-1148（每张翻页卡的封面）——每次渲染都重算，没有记忆。
  */
-export function shelfRender(state: Library, records: Stored<LocalRecord>[], memo: ReturnType<typeof shelfMemoOthers>) {
+export function shelfRender(state: Library, records: readonly Stored<LocalRecord>[], memo: ReturnType<typeof shelfMemoOthers>) {
   const months = [...new Set(records.map((r) => monthKey(r.date)))];
   const years = [...new Set(records.map((r) => yearKey(r.date)))];
   const firsts = records.filter((r) => r.first).length;

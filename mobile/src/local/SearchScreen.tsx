@@ -3,7 +3,7 @@ import { FlatList, View } from "react-native";
 import { useLibrary } from "./context";
 import { sortedRecords, yearKey } from "./model";
 import { useNav, type Props } from "./navigation";
-import { SEARCH_LIMIT, searchRecords, type MediaFilter } from "./search";
+import { SEARCH_LIMIT, searchSortedRecords, type MediaFilter } from "./search";
 import { RecordCard } from "./Home";
 import {
   Button,
@@ -26,16 +26,39 @@ export function SearchScreen(_: Props<"Search">) {
     [person, setPerson] = useState(""),
     [by, setBy] = useState("");
   const { records: recordMap, media: mediaMap, persons: personMap } = state;
-  const { found, years, persons, writers } = useMemo(() => {
-    const all = sortedRecords({ records: recordMap });
+  // 排序、年份与落款只跟着记录变；每敲一个字只重跑下面那趟检索（一万段时整库重排要几十毫秒）。
+  const all = sortedRecords({ records: recordMap });
+  const { years, writers } = useMemo(() => {
     const byCount = new Map<string, number>();
     for (const r of all) if (r.by) byCount.set(r.by, (byCount.get(r.by) ?? 0) + 1);
-    const kinds = Object.fromEntries(
-      Object.values(mediaMap).map((m) => [m.id, m.kind] as const),
-    );
     return {
+      // 与筛选同一口径按本地年份：UTC+8 元旦凌晨的记录不能挂到上一年的标签下。
+      years: [...new Set(all.map((r) => yearKey(r.date)))].sort((a, b) =>
+        b.localeCompare(a),
+      ),
+      writers: [...byCount.entries()]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "zh"))
+        .map(([name]) => name),
+    };
+  }, [all]);
+  const kinds = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.values(mediaMap).map((m) => [m.id, m.kind] as const),
+      ),
+    [mediaMap],
+  );
+  const persons = useMemo(
+    () =>
+      Object.values(personMap).sort((a, b) =>
+        a.name.localeCompare(b.name, "zh"),
+      ),
+    [personMap],
+  );
+  const found = useMemo(
+    () =>
       // 多取一条，才知道是不是还有更早的没列出来。
-      found: searchRecords(
+      searchSortedRecords(
         all,
         query,
         {
@@ -49,18 +72,8 @@ export function SearchScreen(_: Props<"Search">) {
         kinds,
         SEARCH_LIMIT + 1,
       ),
-      // 与筛选同一口径按本地年份：UTC+8 元旦凌晨的记录不能挂到上一年的标签下。
-      years: [...new Set(all.map((r) => yearKey(r.date)))].sort((a, b) =>
-        b.localeCompare(a),
-      ),
-      persons: Object.values(personMap).sort((a, b) =>
-        a.name.localeCompare(b.name, "zh"),
-      ),
-      writers: [...byCount.entries()]
-        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "zh"))
-        .map(([name]) => name),
-    };
-  }, [recordMap, mediaMap, personMap, query, first, quote, media, year, person, by]);
+    [all, kinds, query, first, quote, media, year, person, by],
+  );
   const more = found.length > SEARCH_LIMIT;
   const results = more ? found.slice(0, SEARCH_LIMIT) : found;
   const filtered =

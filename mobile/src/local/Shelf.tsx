@@ -27,10 +27,8 @@ import {
   fullNameLine,
   sealInitial,
   letterSeal,
-  monthKey,
   recordTitle,
   sortedRecords,
-  yearKey,
   type LocalMedia,
   type LocalRecord,
   type RecordDraft,
@@ -51,6 +49,7 @@ import {
 import { pickAnother } from "./shuffle";
 import {
   heroItems,
+  shelfIndex,
   shelfTiles,
   type HeroItem,
   type ShelfTile,
@@ -938,11 +937,9 @@ export function Shelf() {
     () => sortedRecords({ records: recordMap }),
     [recordMap],
   );
-  // 下面几项都是对已排序数组的一趟线性遍历，每次渲染重算。
-  const months = [...new Set(records.map((r) => monthKey(r.date)))];
-  const years = [...new Set(records.map((r) => yearKey(r.date)))];
-  const firsts = records.filter((r) => r.first).length;
-  const quotes = records.filter((r) => r.quote).length;
+  // 按月、按年的汇总跟着排好的记录走：书架挂在编辑页底下，存草稿、同步状态变化都会重渲染。
+  const volumes = useMemo(() => shelfIndex(records), [records]);
+  const { months, years, firsts, quotes } = volumes;
   // 换日时 day 变化触发重渲染，today 随之更新。
   const day = useDayKey();
   const today = new Date();
@@ -966,7 +963,11 @@ export function Shelf() {
     () => sortLetters(Object.values(letterMap), new Date(`${day}T00:00:00`)),
     [letterMap, day],
   );
-  const hero = heroItems(records, today);
+  // 只看月日：同一天之内不必重算。
+  const hero = useMemo(
+    () => heroItems(records, new Date(`${day}T12:00:00`)),
+    [records, day],
+  );
   const tiles = shelfTiles({
     months,
     years,
@@ -1051,9 +1052,7 @@ export function Shelf() {
           />
         );
       case "month": {
-        const monthRecords = records.filter(
-          (r) => monthKey(r.date) === tile.month,
-        );
+        const monthRecords = volumes.byMonth.get(tile.month) ?? [];
         return (
           <ShelfTileView
             key={tile.month}
@@ -1499,7 +1498,7 @@ export function Shelf() {
 }
 
 export function coverForRecords(
-  monthRecords: { mediaIds: readonly string[]; coverId: string | null }[],
+  monthRecords: readonly { mediaIds: readonly string[]; coverId: string | null }[],
   media: Record<string, LocalMedia>,
 ): LocalMedia | undefined {
   for (const r of monthRecords) {
