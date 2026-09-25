@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { Alert, View } from "react-native";
 import {
   Button,
+  Card,
   ErrorText,
   Field,
-  Glass,
   Text,
   messageOf,
   useStyles,
@@ -105,7 +105,7 @@ export function NoteCard({
       });
   };
   return (
-    <Glass radius={16} style={{ padding: 16, gap: 12 }}>
+    <Card>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
         <JournalIcon name="heart" color={colors.accent} size={18} />
         <Text style={s.heading}>{heading}</Text>
@@ -181,6 +181,6 @@ export function NoteCard({
           </View>
         </>
       )}
-    </Glass>
+    </Card>
   );
 }

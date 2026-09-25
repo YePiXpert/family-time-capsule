@@ -866,7 +866,6 @@ export function FamilyScreen({ navigation }: Props<"Family">) {
               <SettingsRow
                 key={m.id}
                 icon="person"
-                tone={m.role === "admin" ? "accent" : "apricot"}
                 label={m.name}
                 subtitle={`${roleLabel(m.role)}${m.enabled ? "" : " · 已停用"}${m.id === family.me.memberId ? " · 我" : ""}`}
                 onPress={admin && overview ? () => memberActions(m) : undefined}

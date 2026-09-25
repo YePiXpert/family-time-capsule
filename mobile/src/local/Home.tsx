@@ -45,7 +45,7 @@ export function RecordCard({
 }) {
   const state = useLibrary(),
     s = useStyles(),
-    { colors, large, liquid } = useTheme();
+    { colors, large } = useTheme();
   const images = record.mediaIds
     .map((id) => state.media[id])
     .filter((m) => m?.kind === "image");
@@ -71,11 +71,7 @@ export function RecordCard({
       accessibilityLabel={`${selected === undefined ? "" : selected ? "已选，" : "未选，"}${title}，${dateLabel(record.date)}`}
       onPress={onPress}
       style={({ pressed }) => [
-        tileSize
-          ? { width: tileSize }
-          : liquid
-            ? s.recordRowInner
-            : s.recordRow,
+        tileSize ? { width: tileSize } : s.recordRow,
         { opacity: pressed ? 0.7 : 1 },
       ]}
     >
@@ -170,12 +166,6 @@ export function RecordCard({
       )}
     </Pressable>
   );
-  if (!tileSize && liquid)
-    return (
-      <Glass interactive radius={16} style={{ marginBottom: 12 }}>
-        {card}
-      </Glass>
-    );
   return card;
 }
 
