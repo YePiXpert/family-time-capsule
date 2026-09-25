@@ -28,6 +28,7 @@ import {
   INDEX_LABEL,
   parseIndex,
   pushManifest,
+  sharedLibrary,
   throwIfAborted,
   type EngineDeps,
 } from "./engine";
@@ -293,6 +294,8 @@ async function syncFamily(
     autoSync: (await readRemoteState())?.autoSync ?? state.autoSync,
     seen: { ...seen },
   });
+  // 停用后重新获准的手机换了设备号，旧设备那份清单还留在远端：拿它比「没变」会一直不发布这台。
+  const { deviceId: current } = await deps.transport.me(deps.signal);
   const own = state.deviceId
     ? entries.find(
         (entry) => entry.deviceId === state.deviceId && entry.keyId === keyId,
@@ -312,12 +315,14 @@ async function syncFamily(
   // meta.createdAt 让清单字节每次不同，所以要比实体段而不是整份清单。
   const unchanged =
     state.lastPush &&
+    (!current || current === state.deviceId) &&
     ownIndex?.sha256 === state.lastPush.manifestSha &&
-    sha256Hex(encodeEntities(withoutPendingRecordings(store.get()))) ===
-      state.lastPush.entitiesSha;
+    sha256Hex(
+      encodeEntities(withoutPendingRecordings(sharedLibrary(store.get()))),
+    ) === state.lastPush.entitiesSha;
   const pushed = unchanged ? null : await pushManifest(store.get(), deps);
   throwIfAborted(deps.signal);
-  const { deviceId } = await deps.transport.me(deps.signal);
+  const deviceId = current;
   if (deviceId && pushed) seen[deviceId] = pushed.index.sha256;
   const result: RemoteState = {
     ...state,

@@ -22,7 +22,7 @@ import {
   hashFile,
   type FileHandle,
 } from "../local/files";
-import type { Library } from "../local/model";
+import { referencedMedia, type Library } from "../local/model";
 import {
   fromBase64,
   keyIdOf,
@@ -144,11 +144,42 @@ export async function assertSameKey(deps: EngineDeps): Promise<string> {
     throw new SyncError("KEY_MISMATCH", KEY_MISMATCH);
   return keyId;
 }
+/**
+ * 发到家里的那份库：草稿只在这台手机上（加入页与同步卡都这样说），只被草稿用到的照片、录音也不传。
+ * 家人合并本来就不看别人清单里的草稿；其他素材原样留着，校验与引用不受影响。
+ */
+export function sharedLibrary(state: Library): Library {
+  if (!Object.keys(state.drafts).length) return state;
+  const rest: Library = { ...state, drafts: {} };
+  const used = new Set([
+    ...referencedMedia(rest),
+    ...Object.values(rest.records).flatMap((r) => r.coverId ?? []),
+    ...Object.values(rest.letters).flatMap((l) => l.coverId ?? []),
+    ...Object.values(rest.albums).flatMap((a) => a.coverId ?? []),
+    ...Object.values(rest.selections).flatMap((q) => q.coverId ?? []),
+    ...Object.values(rest.series).flatMap((x) => x.items.map((i) => i.mediaId)),
+    ...Object.values(rest.yearCovers),
+  ]);
+  const draftOnly = new Set(
+    Object.values(state.drafts)
+      .flatMap((d) => [...d.content.mediaIds, ...(d.content.coverId ?? [])])
+      .filter((id) => !used.has(id)),
+  );
+  if (draftOnly.size)
+    rest.media = Object.fromEntries(
+      Object.entries(state.media).filter(([id]) => !draftOnly.has(id)),
+    );
+  return rest;
+}
 /** 本机清单是上传的唯一来源；已在远端的对象不重复传。 */
 export async function pushManifest(state: Library, deps: EngineDeps) {
   const keyId = keyIdOf(deps.key);
   deps.onProgress?.("正在整理照片…");
-  const manifest = await createSyncManifest(state, deps.onProgress, deps.signal);
+  const manifest = await createSyncManifest(
+    sharedLibrary(state),
+    deps.onProgress,
+    deps.signal,
+  );
   const { meta, entities } = readManifest(manifest);
   const entitiesSha = sha256Hex(entities);
   const owners = blobOwners(decodeLibraryV2(meta, entities));
