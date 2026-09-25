@@ -8,9 +8,9 @@
 - [x] 基线门禁：手机 831、服务端 217、Python 45 通过；双端类型检查、手机 Lint、网络边界通过
 - [x] 审计：记录与阅读、设置／家庭／同步、备份恢复、原生覆盖四路只读审查，疑点用隔离副本复现
 - [x] 集中修复（`950c697`、`a090e09`、`1e1e930`、`8887a59` 及其后）
-- [ ] 原生回归与截图（验证构建）
-- [ ] 全量门禁与独立复审
-- [ ] 最终安装包
+- [x] 原生回归与截图：验证构建 run 36106563461（`9eb6483`）七个作业全绿，新截图已复看
+- [x] 全量门禁与独立复审：手机 847、服务端 217、Python 45；复审 #21–24 已修（`486f64e`）
+- [x] 最终安装包：1.1.5 / 87，`e25af17`，run 36107983728 八个作业全绿，Release 与 CI 产物逐字节相同，版本与报告 SHA 已核（见 HANDOFF）
 
 ## 已确认并修复
 
@@ -63,9 +63,11 @@
 | --- | --- | --- | --- |
 | 基线门禁 | Linux 本机 Node 26 | 全部通过 | `/var/tmp/anan-final/baseline.log` |
 | 1.1.4 原生截图复看 | CI run 36098448025 产物 | 见上 #20 | `/var/tmp/anan-final/ci-shots-1.1.4/` |
-| 双机同步（集成） | vitest + 进程内真服务，两份隔离客户端 | 5 条通过 | `mobile/tests/sync-two-phones.test.ts` |
+| 双机同步（集成） | vitest + 进程内真服务，两份隔离客户端 | 6 条通过 | `mobile/tests/sync-two-phones.test.ts` |
 | 备份往返逐项比对 | vitest 隔离库（审计副本） | 通过（全部实体、原件哈希） | `/var/tmp/anan-audit-D/` |
 | 可阅读副本离线打开 | Playwright 离线 | 文字、原图、录音链接可用 | `/var/tmp/anan-audit-D/archives/` |
+| 原生回归（验证构建） | CI run 36106563461，安卓模拟器 320／390、iOS 26.5 模拟器 | 七个作业全绿，新截图复看无误 | `/var/tmp/anan-final/ci-shots-verify/` |
+| 最终安装包核验 | CI run 36107983728 产物与 Release | SHA-256、版本、扩展、报告 SHA 一致 | `/var/tmp/anan-1.1.5-verified/verification.json` |
 | 数据与备份新确认步骤 | react-native-web 预览（非原生） | 390／320 大字／深色排版正常 | `/var/tmp/anan-preview/shots/fin-backup-*.png` |
 
 ## 外部阻塞
