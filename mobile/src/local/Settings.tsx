@@ -15,6 +15,7 @@ import {
   collectBlobs,
   createBackup,
   daysSinceExport,
+  discardPickedCopies,
   inspectBackup,
   listLocalBackups,
   restoreBackup,
@@ -654,39 +655,58 @@ function useBackupActions() {
     purgeExports();
     try {
       const plan = planExport(manifest);
+      let previous: File | undefined;
       for (let i = 0; i < plan.volumes.length; i++) {
         const volume = await writeVolume(plan, i, setMessage, signal);
+        // 分享面板关上不等于分享目标读完了（网盘可能在后台慢慢传）：上一卷等下一卷写好再清，
+        // 最后一卷和可阅读副本一样留在缓存里，下一次导出前清掉。
+        previous?.delete();
+        previous = volume;
         setMessage(
           plan.volumes.length === 1
             ? "请把备份保存到应用之外…"
             : `请保存第 ${i + 1} 卷／共 ${plan.volumes.length} 卷…`,
         );
         await shareBackup(volume);
-        volume.delete();
       }
-    } finally {
+    } catch (e) {
       purgeExports();
+      throw e;
     }
   };
   const restore = async (files: File[], title: string, done: string) => {
-    const inside = await inspectBackup(files);
+    let inside;
+    try {
+      inside = await inspectBackup(files, false, stoppable());
+    } catch (e) {
+      discardPickedCopies(files);
+      throw e;
+    }
     Alert.alert(
       title,
       `会换成这份备份里的 ${librarySummary(inside)}；现在的内容会先备份一份。`,
       [
-        { text: "取消", style: "cancel" },
+        {
+          text: "取消",
+          style: "cancel",
+          onPress: () => discardPickedCopies(files),
+        },
         {
           text: "恢复并替换",
           style: "destructive",
           onPress: () => {
             void perform(async () => {
-              await restoreBackup(
-                store,
-                files,
-                setMessage,
-                undefined,
-                conflictMediaIds(await readConflicts()),
-              );
+              try {
+                await restoreBackup(
+                  store,
+                  files,
+                  setMessage,
+                  stoppable(),
+                  conflictMediaIds(await readConflicts()),
+                );
+              } finally {
+                discardPickedCopies(files);
+              }
               // 一起写的手机：下一轮把全家的清单重读一遍，把备份之后家人的改动并回来。
               await forgetMergeHistory();
               setMessage(done);
@@ -731,6 +751,8 @@ export function Backup() {
     s = useStyles();
   const actions = useBackupActions();
   const { busy, message, setMessage, backups } = actions;
+  // 系统分享面板取消了也照样返回：存没存到应用之外只有她知道，点了「已存好」才算一次完整备份。
+  const [unconfirmed, setUnconfirmed] = useState(false);
   const exportedDays = daysSinceExport(state);
   const bytes = Object.values(state.media).reduce((n, m) => n + m.bytes, 0);
   return (
@@ -757,6 +779,7 @@ export function Backup() {
             primary
             disabled={actions.locked}
             onPress={() => {
+              setUnconfirmed(false);
               void actions.perform(async () => {
                 const signal = actions.stoppable();
                 // 备份只读快照，不占写队列、不虚增 revision；照片进本机 blob 库后再拼成 .xmb。
@@ -766,13 +789,32 @@ export function Backup() {
                   signal,
                 );
                 await actions.exportManifest(manifest, signal);
-                await store.change((s) => {
-                  s.lastExportAt = new Date().toISOString();
-                });
-                setMessage("备份已生成，请确认它已保存到应用之外。");
+                setUnconfirmed(true);
+                setMessage(
+                  "备份已生成。存到网盘、电脑或家人的手机以后点「已存好」；刚才取消了就再保存一次。",
+                );
               });
             }}
           />
+          {unconfirmed && !busy && (
+            <Button
+              title="已存好"
+              testID="backup-confirm-saved"
+              kind="text"
+              compact
+              onPress={() => {
+                void store
+                  .change((s) => {
+                    s.lastExportAt = new Date().toISOString();
+                  })
+                  .then(() => {
+                    setUnconfirmed(false);
+                    setMessage("记下了：今天保存过完整备份。");
+                  })
+                  .catch((e) => setMessage(messageOf(e)));
+              }}
+            />
+          )}
           {actions.stop}
         </View>
         <ErrorText message={actions.error} />

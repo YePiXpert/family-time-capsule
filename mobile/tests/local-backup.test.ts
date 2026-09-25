@@ -1436,3 +1436,34 @@ it.each(["xmbm", "xmb"])("preserves record and letter ancestry through %s restor
   expect(store.get().records.r).toEqual(saved.records.r);
   expect(store.get().letters.l).toEqual(saved.letters.l);
 });
+it("failed or stopped restores keep the other restore records and add none", async () => {
+  const { store, backup } = await setup();
+  for (const name of ["v1", "v2", "v3"]) {
+    await store.change((s) => { s.profile.name = name; });
+    await backup.createBackup(store.get());
+    // 备份文件名按时刻排序，隔一点免得同一毫秒。
+    await new Promise((done) => setTimeout(done, 5));
+  }
+  const names = () => backup.listLocalBackups().map((b) => b.file.name).sort();
+  const retained = names();
+  expect(retained).toHaveLength(3);
+  await store.change((s) => { s.profile.name = "now"; });
+  const target = backup.listLocalBackups().find((b) => b.file.name === retained[2])!.file;
+  env.database!.exec(
+    "CREATE TRIGGER reject_update BEFORE UPDATE ON root BEGIN SELECT RAISE(ABORT, 'disk full'); END;",
+  );
+  for (let i = 0; i < 2; i++)
+    await expect(backup.restoreBackup(store, target)).rejects.toThrow("disk full");
+  env.database!.exec("DROP TRIGGER reject_update;");
+  const controller = new AbortController();
+  await expect(backup.restoreBackup(store, target, (stage) => {
+    if (stage.includes("写入本机资料")) controller.abort();
+  }, controller.signal)).rejects.toBeInstanceOf(backup.BackupStopped);
+  expect(names()).toEqual(retained);
+  expect(store.get().profile.name).toBe("now");
+  // 真恢复成功：留一份「恢复前」，最旧的让位，仍是三份。
+  await backup.restoreBackup(store, target);
+  const after = names();
+  expect(after).toHaveLength(3);
+  expect(after).not.toContain(retained[0]);
+});

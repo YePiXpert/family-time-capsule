@@ -217,12 +217,16 @@ export async function createBackup(
 ): Promise<File> {
   return writeManifest(state, onProgress, signal);
 }
-/** createBackup 的本体；protect 里的保留备份这一轮不清（恢复时先备份当前内容，不能把正要恢复的那份清掉）。 */
+/**
+ * createBackup 的本体；protect 里的保留备份这一轮不清（恢复时先备份当前内容，不能把正要恢复的那份清掉）。
+ * 恢复用的「恢复前」那份不在这里收拾（prune = false）：恢复成功才让最旧的让位，失败或停止不挤掉别的恢复记录。
+ */
 async function writeManifest(
   state: Library,
   onProgress?: RestoreProgress,
   signal?: AbortSignal,
   protect: File[] = [],
+  prune = true,
 ): Promise<File> {
   const out = new File(
     backupDirectory,
@@ -230,7 +234,7 @@ async function writeManifest(
   );
   await writeManifestTo(state, out, backupDirectory, false, onProgress, signal);
   // 收拾失败不影响已经写好、核对过的备份。
-  tidyBackups([out, ...protect]);
+  if (prune) tidyBackups([out, ...protect]);
   return out;
 }
 /**
@@ -829,7 +833,8 @@ export async function restoreBackup(
   onProgress?.("正在备份当前内容…");
   // 正要恢复的那份可能就是最旧的保留备份：先保护它不被清掉，恢复完再按常规收拾。
   let snapshot = store.get();
-  let prior = await writeManifest(snapshot, onProgress, signal, inputs);
+  let prior = await writeManifest(snapshot, onProgress, signal, inputs, false);
+  const priors = [prior];
   let restored: Library | null = null;
   let replaced: LocalMedia[] = [];
   let carried = new Set<string>();
@@ -870,17 +875,36 @@ export async function restoreBackup(
           );
         onProgress?.("恢复途中又有新内容，正在重新备份当前内容…");
         snapshot = store.get();
-        prior = await writeManifest(snapshot, onProgress, signal, [
-          ...inputs,
-          prior,
-        ]);
+        prior = await writeManifest(
+          snapshot,
+          onProgress,
+          signal,
+          [...inputs, prior],
+          false,
+        );
+        priors.push(prior);
       }
     }
   } catch (e) {
     if (restored)
       for (const m of Object.values(restored.media)) deleteMediaFiles(m);
+    // 没换成：现在的内容原样还在，这一轮留的「恢复前」只是它的重复，不占恢复记录的位置。
+    try {
+      for (const file of priors) if (file.exists) file.delete();
+      collectBlobs();
+    } catch {
+      // 删不掉只是多一份恢复记录。
+    }
     throw e;
   }
+  // 中途又重新备份过：只留最后那份（它包含前几份之后写进来的内容）。
+  for (const file of priors)
+    if (file !== prior)
+      try {
+        file.delete();
+      } catch {
+        // 多一份恢复记录，下一次收拾再清。
+      }
   // 恢复出来的素材都是新文件名，恢复前的原件与缩略图从此没人引用（「恢复前」那份备份里有副本），
   // 不删就每恢复一次多占一整份照片的空间，「清理没用到的」也够不着它们。
   const kept = new Set([
@@ -897,6 +921,19 @@ export async function restoreBackup(
   // 恢复完按常规只留三份；刚写的「恢复前」那份占一个位，最旧的让位。收拾出错不影响已完成的恢复。
   tidyBackups([prior]);
   return prior;
+}
+/**
+ * 系统文件选择器把选中的备份复制进缓存的 DocumentPicker 目录；恢复做完、取消或出错后删掉这份副本，
+ * 不然几 GB 的备份一直占着空间，下一次恢复更容易空间不够。只删那个目录里的，别的文件不碰。
+ */
+export function discardPickedCopies(files: File[]): void {
+  const picked = new Directory(Paths.cache, "DocumentPicker").uri;
+  for (const file of files)
+    try {
+      if (file.uri.startsWith(picked) && file.exists) file.delete();
+    } catch {
+      // 缓存迟早由系统收回。
+    }
 }
 export async function shareBackup(file: File) {
   if (!(await Sharing.isAvailableAsync()))

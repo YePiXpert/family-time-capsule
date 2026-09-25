@@ -137,4 +137,22 @@ describe("offline archive viewer", () => {
     viewer.go({ tab: "persons" });
     expect(nodes.content!.innerHTML).toContain("妈妈");
   });
+  it("shows letter and export days in local time like the Markdown copy", () => {
+    const tz = process.env.TZ;
+    process.env.TZ = "Asia/Shanghai";
+    try {
+      const s = sample();
+      // 北京时间 3 月 2 日凌晨四点写、9 月 2 日早上七点拆：UTC 日期还是前一天。
+      s.letters.opened = { ...s.letters.opened!, writtenAt: "2026-03-01T20:00:00.000Z", openedAt: "2026-09-01T23:00:00.000Z" };
+      const { nodes, viewer } = run(
+        planArchive(s, { now: new Date("2026-09-18T17:00:00.000Z"), includeSealedLetters: true }).library,
+      );
+      expect(nodes.subtitle!.innerHTML).toContain("导出于 2026年9月19日");
+      viewer.go({ tab: "letters" });
+      expect(nodes.content!.innerHTML).toContain("写于 2026年3月2日 · 拆于 2026年9月2日");
+    } finally {
+      if (tz === undefined) delete process.env.TZ;
+      else process.env.TZ = tz;
+    }
+  });
 });
