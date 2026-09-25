@@ -1074,3 +1074,26 @@ it("阅读页标「第一次」带上世系：别的手机没解决的冲突卡�
   const after = await a.state.readConflicts();
   expect(after.map((c) => (c.loser as { text: string }).text)).toContain("爸爸写的：她笑出了声，像小鸭子");
 }, 30000);
+it("只改了年度寄语或宝宝资料（库根，不是实体）也要重新发布", async () => {
+  const { receiver: p, deps } = await seeded();
+  await p.family.joinFamily(p.store, key, deps);
+  await p.store.change((s) => {
+    s.yearNotes = { ...s.yearNotes, "2026": "这一年你学会了走路" };
+  });
+  const publish = vi.spyOn(deps.transport, "putManifest");
+  await p.family.runFamilySync(p.store, deps);
+  expect(publish).toHaveBeenCalledTimes(1);
+  publish.mockClear();
+  await p.store.change((s) => {
+    s.profile = { ...s.profile, motto: "入淮清洛渐漫漫" };
+  });
+  await p.family.runFamilySync(p.store, deps);
+  expect(publish).toHaveBeenCalledTimes(1);
+  // 只改本机设置（主题）不算要发布的内容。
+  publish.mockClear();
+  await p.store.change((s) => {
+    s.settings = { ...s.settings, theme: "dark" };
+  });
+  await p.family.runFamilySync(p.store, deps);
+  expect(publish).not.toHaveBeenCalled();
+});

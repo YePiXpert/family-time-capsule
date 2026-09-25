@@ -89,6 +89,37 @@ function descendsFrom(candidate: Shared, local: Shared): boolean | undefined {
   return candidate.ancestors.includes(contentHashOf(local).slice(0, 16));
 }
 type Version = { fp: string; entity: Shared; device: string | null };
+/** JSON 值逐项相等（键序不论）。说「不等」可能是假的（undefined 键、NaN），说「相等」一定真。 */
+function equalValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
+  if (Array.isArray(a) || Array.isArray(b))
+    return (
+      Array.isArray(a) &&
+      Array.isArray(b) &&
+      a.length === b.length &&
+      a.every((x, i) => equalValue(x, b[i]))
+    );
+  const ka = Object.keys(a),
+    kb = Object.keys(b);
+  return (
+    ka.length === kb.length &&
+    ka.every(
+      (k) =>
+        Object.prototype.hasOwnProperty.call(b, k) &&
+        equalValue(
+          (a as Record<string, unknown>)[k],
+          (b as Record<string, unknown>)[k],
+        ),
+    )
+  );
+}
+/** 远端这一版和本机的只差草稿计数与世系：指纹必然相同，不必再哈希（没有 JIT 的手机上哈希很贵）。 */
+function sameVersion(remote: Shared, local: Shared): boolean {
+  const { revision: _r1, ancestors: _a1, ...r } = remote as Record<string, unknown>;
+  const { revision: _r2, ancestors: _a2, ...l } = local as Record<string, unknown>;
+  return equalValue(r, l);
+}
 /** 实体指纹 "updatedAt|内容哈希"；没有 updatedAt 的（人物）前半为空。 */
 export function fingerprintOf(entity: Shared): string {
   return `${entity.updatedAt ?? ""}|${contentHashOf(entity)}`;
@@ -171,6 +202,10 @@ type RootId = string;
 const PROFILE_FIELDS = ["name", "fullName", "motto", "birthday", "avatarId"] as const;
 type ProfileField = (typeof PROFILE_FIELDS)[number];
 /** 根字段拆成小块各自合并：资料按字段一块，年度寄语／年度封面按年一块。 */
+/** 发给家人的库根（宝宝资料、年度寄语、封面、选片），键排好；本机设置等不在其中。 */
+export function sharedRootOf(lib: Library): Record<string, unknown> {
+  return Object.fromEntries(rootIds(lib).map((id) => [id, rootValue(lib, id)]));
+}
 function rootIds(lib: Library): RootId[] {
   return [
     ...PROFILE_FIELDS.map((f) => `profile:${f}`),
@@ -451,7 +486,7 @@ export function mergeLibraries(
       for (const r of ordered) {
         const R = collection(r.library, kind)[id];
         if (!R) continue;
-        const fp = fingerprintOf(R);
+        const fp = L && sameVersion(R, L) ? fpL! : fingerprintOf(R);
         if (fp === fpL || fp === M || knownHere.has(fp)) continue;
         if (candidates.some((c) => c.fp === fp)) continue;
         candidates.push({

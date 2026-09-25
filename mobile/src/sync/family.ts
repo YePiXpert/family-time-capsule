@@ -18,21 +18,33 @@ import {
   pumpBytes,
   renderThumb,
 } from "../local/files";
-import type { LocalMedia } from "../local/model";
+import {
+  ENTITY_KINDS,
+  freezeLibrary,
+  type Library,
+  type LocalMedia,
+} from "../local/model";
 import type { LocalStore } from "../local/store";
-import { fromBase64, keyIdOf, openSmall, sha256Hex } from "./crypto";
+import { fromBase64, keyIdOf, openSmall } from "./crypto";
 import {
   assertSameKey,
   downloadBlob,
   fetchManifestOf,
   INDEX_LABEL,
   parseIndex,
+  publishedSha,
   pushManifest,
   sharedLibrary,
   throwIfAborted,
   type EngineDeps,
 } from "./engine";
-import { mergeLibraries, type Conflict, type RemoteSnapshot } from "./merge";
+import {
+  canonical,
+  mergeLibraries,
+  sharedRootOf,
+  type Conflict,
+  type RemoteSnapshot,
+} from "./merge";
 import {
   clearSyncFiles,
   forgetKey,
@@ -136,6 +148,40 @@ function combineConflicts(earlier: readonly Conflict[], added: readonly Conflict
   }
   return [...conflicts.values()];
 }
+/**
+ * 上一次核对过（或刚发布）的共享内容：实体按对象、库根按规范 JSON 记下。库里实体深冻结、只整个替换，
+ * 对象都没换就不用再把整份库编码、哈希一遍（一万段在没有 JIT 的手机上要好几秒）。
+ */
+let published: { sha: string; refs: Map<string, object>; root: string } | undefined;
+function sharedRefs(lib: Library): Map<string, object> {
+  const shared = sharedLibrary(lib);
+  const refs = new Map<string, object>();
+  for (const kind of ENTITY_KINDS)
+    for (const [id, entity] of Object.entries(shared[kind]))
+      refs.set(`${kind}:${id}`, entity);
+  return refs;
+}
+function rememberPublished(lib: Library, sha: string): void {
+  published = { sha, refs: sharedRefs(lib), root: canonical(sharedRootOf(lib)) };
+}
+function publishedUnchanged(lib: Library, sha: string): boolean {
+  const refs = sharedRefs(lib),
+    root = canonical(sharedRootOf(lib));
+  if (
+    published?.sha === sha &&
+    published.root === root &&
+    published.refs.size === refs.size &&
+    [...refs].every(([id, entity]) => published!.refs.get(id) === entity)
+  )
+    return true;
+  const current = publishedSha(
+    encodeEntities(withoutPendingRecordings(sharedLibrary(lib))),
+    lib,
+  );
+  if (current !== sha) return false;
+  published = { sha, refs, root };
+  return true;
+}
 /** 准备文件不占写队列；最终合并一定用写队列里的新鲜资料。 */
 export async function runFamilySync(
   store: LocalStore,
@@ -183,10 +229,10 @@ async function syncFamily(
       );
       if (seen[entry.deviceId] === index.sha256) continue;
       const manifest = await fetchManifestOf(entry, deps);
-      read = {
-        manifest,
-        library: decodeLibraryV2(manifest.meta, manifest.entities),
-      };
+      const library = decodeLibraryV2(manifest.meta, manifest.entities);
+      // 冻住：这一轮要合并两次（先算要下载什么，再在写队列里合），实体的哈希按对象记住，第二次不用重算。
+      freezeLibrary(library);
+      read = { manifest, library };
     } catch (e) {
       if (!undecodable(e)) throw e;
       unread.set(entry.deviceId, e);
@@ -319,14 +365,14 @@ async function syncFamily(
   // 上传的就是这一刻的库（下面两次 store.get() 与这里在同一段同步代码里）。
   deps.onSnapshot?.();
   // meta.createdAt 让清单字节每次不同，所以要比实体段而不是整份清单。
+  const snapshot = store.get();
   const unchanged =
     state.lastPush &&
     (!current || current === state.deviceId) &&
     ownIndex?.sha256 === state.lastPush.manifestSha &&
-    sha256Hex(
-      encodeEntities(withoutPendingRecordings(sharedLibrary(store.get()))),
-    ) === state.lastPush.entitiesSha;
-  const pushed = unchanged ? null : await pushManifest(store.get(), deps);
+    publishedUnchanged(snapshot, state.lastPush.entitiesSha);
+  const pushed = unchanged ? null : await pushManifest(snapshot, deps);
+  if (pushed) rememberPublished(snapshot, pushed.entitiesSha);
   throwIfAborted(deps.signal);
   const deviceId = current;
   if (deviceId && pushed) seen[deviceId] = pushed.index.sha256;

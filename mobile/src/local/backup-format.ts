@@ -138,11 +138,11 @@ export function decodeManifest(json: Uint8Array): BackupManifest {
     throw new Error(`不是受支持的${APP_NAME}备份。`);
   normalizeLibrary(m.library);
   validateLibrary(m.library);
-  const ids = Object.keys(m.library.media).sort();
+  const ids = new Set(Object.keys(m.library.media));
   if (
-    m.mediaOrder.length !== ids.length ||
-    new Set(m.mediaOrder).size !== ids.length ||
-    m.mediaOrder.some((i) => !ids.includes(i)) ||
+    m.mediaOrder.length !== ids.size ||
+    new Set(m.mediaOrder).size !== ids.size ||
+    m.mediaOrder.some((i) => !ids.has(i)) ||
     Object.values(m.library.drafts).some((d) => d.recordingFile)
   )
     throw new Error("备份素材清单无效。");
@@ -278,16 +278,15 @@ export function decodeLibraryV2(
   validateLibrary(state);
   if (Object.values(state.drafts).some((d) => d.recordingFile))
     throw new Error("备份素材清单无效。");
-  const wanted = new Set(Object.values(state.media).map((m) => m.sha256));
+  const media = Object.values(state.media);
+  const wanted = new Set(media.map((m) => m.sha256));
   const carried = new Set(meta.blobs.map((b) => b.sha256));
+  // 每个 blob 都要有同内容同长度的素材：先建一张表，免得一万个素材时逐个全表比对（几十秒）。
+  const sized = new Set(media.map((m) => `${m.sha256}:${m.bytes}`));
   if (
     wanted.size !== carried.size ||
     [...wanted].some((h) => !carried.has(h)) ||
-    meta.blobs.some((b) =>
-      Object.values(state.media).every(
-        (m) => m.sha256 !== b.sha256 || m.bytes !== b.bytes,
-      ),
-    )
+    meta.blobs.some((b) => !sized.has(`${b.sha256}:${b.bytes}`))
   )
     throw new Error("备份素材清单无效。");
   return state;
