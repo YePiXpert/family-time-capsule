@@ -1033,3 +1033,44 @@ it("物化完后停止仍不写库，文件回到原样", async () => {
   expect(p.store.get()).toBe(before);
   expect(directoryBytes(p.files.mediaDirectory.uri)).toEqual({});
 });
+
+it("阅读页标「第一次」带上世系：别的手机没解决的冲突卡不被假冲突顶掉", async () => {
+  const remote = fakeRemote();
+  const a = await phone();
+  const depsA = { transport: remote.client("A"), key };
+  await a.add("a", "她笑了", "爸爸", false);
+  const edit = async (p: typeof a, text: string, at: string) =>
+    p.store.change((s) => {
+      const r = s.records["r-a"]!;
+      s.drafts.e = { id: "e", recordId: r.id, baseRevision: r.revision, updatedAt: at,
+        content: { ...p.model.clone(r), mediaIds: [...r.mediaIds], text } };
+      p.model.saveRecord(s, "e", r.id, at);
+    });
+  await edit(a, "她笑了，第一次出声", "2026-09-20T01:00:00.000Z");
+  await a.family.joinFamily(a.store, key, depsA);
+  const b = await phone();
+  const depsB = { transport: remote.client("B"), key };
+  await b.family.joinFamily(b.store, key, depsB);
+  expect(b.store.get().records["r-a"]?.text).toBe("她笑了，第一次出声");
+  // Concurrent edits: B's is newer and is published first.
+  a.activate();
+  await edit(a, "爸爸写的：她笑出了声，像小鸭子", "2026-09-20T04:00:00.000Z");
+  b.activate();
+  await edit(b, "妈妈写的：她笑了", "2026-09-20T05:00:00.000Z");
+  await b.family.runFamilySync(b.store, depsB);
+  a.activate();
+  await a.family.runFamilySync(a.store, depsA);
+  const genuine = await a.state.readConflicts();
+  expect(genuine.map((c) => (c.loser as { text: string }).text)).toEqual(["爸爸写的：她笑出了声，像小鸭子"]);
+  // B marks the record 第一次 on the reading page (patchRecord), syncs; A syncs later without touching the card.
+  b.activate();
+  await b.family.runFamilySync(b.store, depsB);
+  await b.store.change((s) => b.model.patchRecord(s, "r-a", { first: true }, "2026-09-20T06:00:00.000Z"));
+  await b.family.runFamilySync(b.store, depsB);
+  a.activate();
+  await a.family.runFamilySync(a.store, depsA);
+  expect(a.store.get().records["r-a"]?.first).toBe(true);
+  // A never resolved its card: the losing text must still be recoverable.
+  const after = await a.state.readConflicts();
+  expect(after.map((c) => (c.loser as { text: string }).text)).toContain("爸爸写的：她笑出了声，像小鸭子");
+}, 30000);
