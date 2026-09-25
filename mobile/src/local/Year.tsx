@@ -25,7 +25,7 @@ import { BookPreview } from "./BookPreview";
 import type { BookLayout, BookPhoto } from "./book";
 import { PhotoPicker } from "./PhotoPicker";
 import { CHILD_FALLBACK } from "./brand";
-import { applyYearPicks, checkEditorResult, editorContext, recapContext } from "../ai/state";
+import { applyYearPicks, checkEditorResult, editorContext, fromEditorIds, recapContext } from "../ai/state";
 import { api, getToken } from "../ai/client";
 import {
   Button,
@@ -122,14 +122,14 @@ export function YearEditor({ year, records }: { year: string; records: readonly 
         nav.navigate("Family");
         throw new Error("先在「家庭与同步」加入家庭，再来建议目录。");
       }
-      const context = editorContext(year, records, state.media);
+      const { context, ids } = editorContext(year, records, state.media);
       const result = await api<unknown>("/ai/write", {
         requestId: randomUUID(), photos: [], context, writingMode: "editor",
       }, "POST", controller.signal);
       if (!active()) return;
-      // 只接受确实送去的记录，超过 400 条时不能让旧服务选中未发送的 id。
-      const sentIds = new Set<string>((JSON.parse(context) as { records: { id: string }[] }).records.map((r) => r.id));
-      setPreview(checkEditorResult(result, year, records.filter((r) => sentIds.has(r.id))));
+      // 编号换回真 id；只接受确实送去的记录（超过 400 条时只送最新的 400 条）。
+      const sent = new Set(ids);
+      setPreview(checkEditorResult(fromEditorIds(result, ids), year, records.filter((r) => sent.has(r.id))));
     } catch (e) {
       if (active()) setError(messageOf(e));
     } finally {

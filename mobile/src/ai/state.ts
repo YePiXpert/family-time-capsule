@@ -233,8 +233,15 @@ export function rememberQuestion(
   return { ...cache, requestedDay: today, ...(question ? { day: today, question } : {}), asked: asked.slice(-7) };
 }
 
+/** 发给编者的清单。记录按日期编号 "1"…"400"，不送 36 字的真 id；ids[n - 1] 是第 n 条的真 id。 */
+export type EditorRequest = { context: string; ids: readonly string[] };
+/** 与 server/src/contracts.ts 的 context 上限一致。 */
+const EDITOR_CONTEXT_LIMIT = 60000;
+/** [正文, 标题] 逐档收紧。最后一档每条不到 150 字：400 条、落款都写满 20 字也放得下。 */
+const EDITOR_CLIPS = [[4000, 100], [1500, 100], [600, 100], [200, 100], [60, 40], [0, 20]] as const;
+
 /** 只投影本次确认的年份与文字；最多取最新 400 条，仍按日期升序发出。 */
-export function editorContext(year: string, records: readonly Stored<LocalRecord>[], media: Library["media"]): string {
+export function editorContext(year: string, records: readonly Stored<LocalRecord>[], media: Library["media"]): EditorRequest {
   const selected = records.filter((r) => yearKey(r.date) === year)
     .sort((a, b) => compareDates(a.date, b.date) || a.id.localeCompare(b.id)).slice(-400);
   if (!/^\d{4}$/.test(year) || !selected.length ||
@@ -242,17 +249,32 @@ export function editorContext(year: string, records: readonly Stored<LocalRecord
     selected.some((r) => !r.id || r.id.length > 100))
     throw new AIError("INVALID_INPUT", "这一年的记录清单格式不对，请检查后重试。");
   // slice 的限额含省略号，JSON 转义的体积也算在整体限额里。
-  const clip = (text: string, max: number) => text.length > max ? `${text.slice(0, max - 1)}…` : text;
-  for (const limit of [4000, 1500, 600, 200]) {
-    const context = JSON.stringify({ year, records: selected.map((r) => ({
-      id: r.id, date: toDayKey(new Date(r.date)), ...(r.by ? { by: r.by.slice(0, 20) } : {}),
-      title: recordTitle(r).slice(0, 100), text: clip(r.text, limit),
+  const clip = (text: string, max: number) => text.length <= max ? text : max > 1 ? `${text.slice(0, max - 1)}…` : "";
+  for (const [textMax, titleMax] of EDITOR_CLIPS) {
+    const context = JSON.stringify({ year, records: selected.map((r, i) => ({
+      id: String(i + 1), date: toDayKey(new Date(r.date)), ...(r.by ? { by: r.by.slice(0, 20) } : {}),
+      title: recordTitle(r).slice(0, titleMax), text: clip(r.text, textMax),
       first: r.first, quote: r.quote === true,
       photos: r.mediaIds.some((id) => media[id]?.kind === "image"),
     })) });
-    if (context.length <= 60000) return context;
+    if (context.length <= EDITOR_CONTEXT_LIMIT) return { context, ids: selected.map((r) => r.id) };
   }
   throw new AIError("INVALID_INPUT", "这一年的记录太多，AI 暂时帮不了。");
+}
+
+/** 把编者结果里的编号换回真 id。认不出的编号换成空串，交给 checkEditorResult 拒绝；形状不对的原样交回。 */
+export function fromEditorIds(result: unknown, ids: readonly string[]): unknown {
+  const real = (id: unknown) => typeof id !== "string" ? id : /^[1-9]\d*$/.test(id) ? ids[Number(id) - 1] ?? "" : "";
+  if (!result || typeof result !== "object" || !Array.isArray((result as { chapters?: unknown }).chapters)) return result;
+  const chapters = ((result as { chapters: unknown[] }).chapters).map((chapter) => {
+    if (!chapter || typeof chapter !== "object") return chapter;
+    const c = { ...(chapter as Record<string, unknown>) };
+    if (Array.isArray(c.picks)) c.picks = c.picks.map(real);
+    if (c.quote && typeof c.quote === "object" && "recordId" in c.quote)
+      c.quote = { ...(c.quote as Record<string, unknown>), recordId: real((c.quote as { recordId: unknown }).recordId) };
+    return c;
+  });
+  return { ...(result as Record<string, unknown>), chapters };
 }
 
 // 与 server/src/prompts.ts BANNED_WORDS 对齐；只约束 AI 建议，家人的原句不受此限制。

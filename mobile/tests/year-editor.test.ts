@@ -57,7 +57,7 @@ const render = () => {
 };
 const control = (label: string) => controls(render()).find(p => p.testID === label || p.title === label);
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
-const result = () => ({ title: "窗边的小脚", chapters: [{ month: "2026-09", picks: ["r"], quote: { recordId: "r", text: "窗边有风。" } }], notes: "每月挑一段。" });
+const result = () => ({ title: "窗边的小脚", chapters: [{ month: "2026-09", picks: ["1"], quote: { recordId: "1", text: "窗边有风。" } }], notes: "每月挑一段。" });
 beforeEach(() => {
   vi.clearAllMocks(); env.slots = []; env.cursor = 0; env.cleanups = [];
   env.state = emptyLibrary();
@@ -74,7 +74,7 @@ it("the suggest button sends the year straight away; only apply persists", async
   const [path, body, method, signal] = env.api.mock.lastCall!;
   expect(path).toBe("/ai/write"); expect(method).toBe("POST"); expect(signal.aborted).toBe(false);
   expect(body).toMatchObject({ photos: [], writingMode: "editor" });
-  expect(JSON.parse(body.context).records[0]).toMatchObject({ id: "r", by: "爸爸", text: "窗边有风。" });
+  expect(JSON.parse(body.context).records[0]).toMatchObject({ id: "1", by: "爸爸", text: "窗边有风。" });
   expect(control("year-editor-preview")).toBeDefined(); expect(env.change).not.toHaveBeenCalled();
   control("不引")!.onPress!();
   control("year-editor-apply")!.onPress!(); await tick();
