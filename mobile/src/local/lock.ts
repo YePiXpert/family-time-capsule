@@ -12,3 +12,16 @@ export const useLocked = () => useContext(LockedContext);
  */
 export const CoveredContext = createContext(false);
 export const useCovered = () => useContext(CoveredContext);
+
+/**
+ * 解锁失败时给哪句提示。设备后来关掉了锁屏密码（安卓 not_enrolled、iOS passcode_not_set）
+ * 或没有可用的验证方式时，系统不抛错而是返回失败；这时「再试一次」永远试不过，要告诉人
+ * 先去系统设置重新打开锁屏密码。锁本身不放开。
+ */
+export function unlockFailureMessage(error?: string): string {
+  return ["not_enrolled", "passcode_not_set", "not_available"].includes(
+    error ?? "",
+  )
+    ? "这台手机的锁屏密码已关闭。到系统设置重新打开锁屏密码后，再点解锁。"
+    : "没有解锁成功，再试一次。";
+}
