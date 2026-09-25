@@ -318,8 +318,11 @@ test('重新生成恢复码：版本只能加一、钥匙指纹要对，旧恢�
  assert.equal((await f.call('PUT','/api/v1/admin/recovery',next,f.admin!.token)).status,200);
  assert.equal((await f.call('POST','/api/v1/recovery/claim',{proof:PROOF})).status,403);
  assert.equal((await f.call('POST','/api/v1/recovery/claim',{proof:'ef'.repeat(32)})).status,200);
- // 另一位管理者拿着旧版本号再换：提示刚被换过。
- assert.equal((await f.call('PUT','/api/v1/admin/recovery',next,f.admin!.token)).status,409);
+ // 响应丢了、手机原样再交一次：已经生效，照样算成功，不再加版本。
+ assert.equal((await f.call('PUT','/api/v1/admin/recovery',next,f.admin!.token)).status,200);
+ // 另一位管理者拿着旧版本号交了另一套：提示刚被换过，已生效的那套不变。
+ assert.equal((await f.call('PUT','/api/v1/admin/recovery',{keyId:KEY_ID,version:2,...recoveryFor('12'.repeat(32))},f.admin!.token)).status,409);
+ assert.equal((await f.call('POST','/api/v1/recovery/claim',{proof:'ef'.repeat(32)})).status,200);
  assert.equal((await f.call('GET','/api/v1/family',undefined,member.token)).body.recoveryVersion,2);
 });
 
