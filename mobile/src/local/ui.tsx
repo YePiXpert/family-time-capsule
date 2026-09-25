@@ -1055,7 +1055,6 @@ export function SignatureButton({
   onChange,
   disabled = false,
   testID = "editor-by",
-  initiallyOpen = false,
   leading,
 }: {
   value: string | undefined;
@@ -1063,14 +1062,12 @@ export function SignatureButton({
   onChange: (by: string | undefined) => void;
   disabled?: boolean;
   testID?: string;
-  /** 「我的落款」页一进来就把 chips 铺开。 */
-  initiallyOpen?: boolean;
   /** 给了就与落款排成一行、落款靠右：编辑页纸上页脚左边的「草稿会自动保留」（null 只占位）；chips 照样铺满整行。 */
   leading?: ReactNode;
 }) {
   const s = useStyles();
   const { colors: c } = useTheme();
-  const [open, setOpen] = useState(initiallyOpen);
+  const [open, setOpen] = useState(false);
   const [custom, setCustom] = useState<string | null>(null);
   const shown = [...new Set([...(value ? [value] : []), ...options])];
   const pick = (by: string | undefined) => {

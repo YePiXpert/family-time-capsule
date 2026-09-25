@@ -1219,7 +1219,7 @@ export function Shelf() {
           <Pressable
             testID="open-settings"
             accessibilityRole="button"
-            accessibilityLabel="我的"
+            accessibilityLabel="设置"
             onPress={() => nav.navigate("Settings")}
             style={({ pressed }) => ({
               width: 44,
@@ -1322,7 +1322,7 @@ export function Shelf() {
             testID="backup-reminder"
             title={
               exportedDays === null
-                ? "还没有导出过备份"
+                ? "还没有保存过完整备份"
                 : `已经 ${exportedDays} 天没有备份了`
             }
             body={backupNudgeBody(sync.joined, sync.lastSyncAt, today)}

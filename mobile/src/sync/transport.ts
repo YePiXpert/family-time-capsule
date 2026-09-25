@@ -136,7 +136,7 @@ export type Transport = {
 };
 const HAVE_BATCH = 2000;
 const MESSAGES: Record<string, string> = {
-  AUTH_REQUIRED: "这台手机还没加入家庭，或已被停用。请到「我的 → 家庭与设备」加入。",
+  AUTH_REQUIRED: "这台手机还没加入家庭，或已被停用。请到「设置 → 家庭与同步」加入。",
   QUOTA_FULL: "远端备份空间已用完，请联系管理者调整。",
   TOO_LARGE: "这一份太大，请更新应用后重试。",
   SERVER_FULL: "服务器空间不足，请联系管理者。",

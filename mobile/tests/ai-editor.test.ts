@@ -87,7 +87,7 @@ it("a mounted editor still sends and saves a polish proposal", async () => {
   expect(env.api.mock.lastCall![3].aborted).toBe(false);
   expect(env.patch).toHaveBeenCalledWith(expect.objectContaining({ aiProposal: expect.objectContaining({ text: "窗边有风。" }) }));
 });
-it("a mounted phone without a token still opens 家庭与设备", async () => {
+it("a mounted phone without a token still opens 家庭与同步", async () => {
   env.token.mockResolvedValue(null); control("ai-polish").onPress!(); await tick();
   expect(env.navigate).toHaveBeenCalledWith("Family"); expect(env.api).not.toHaveBeenCalled();
 });

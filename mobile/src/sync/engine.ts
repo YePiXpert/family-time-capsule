@@ -81,7 +81,7 @@ export const throwIfAborted = (signal?: AbortSignal) => {
   if (signal?.aborted) throw stopped();
 };
 const KEY_MISMATCH =
-  "家人的远端备份使用另一份恢复码。请在「备份与恢复」选择「加入家人一起写」，输入家庭的 12 词恢复码。";
+  "这台手机的钥匙和家里远端的对不上。请到「设置 → 家庭与同步」退出后重新加入。";
 const WRONG_CODE = "这份恢复码打不开远端的备份，请核对后再试。";
 /** 从句柄顺序读满 bytes 字节（256 KiB 一口，每口让出主线程）。 */
 async function readExact(h: FileHandle, bytes: number): Promise<Uint8Array> {

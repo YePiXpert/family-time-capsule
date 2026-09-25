@@ -82,10 +82,10 @@ it("the suggest button sends the year straight away; only apply persists", async
   control("year-editor-clear")!.onPress!(); await tick();
   expect(env.state!.yearPicks).toBeUndefined();
 });
-it("a phone that has not joined is taken to 家庭与设备 and never sends the year", async () => {
+it("a phone that has not joined is taken to 家庭与同步 and never sends the year", async () => {
   env.token.mockResolvedValue(null); control("year-editor-suggest")!.onPress!(); await tick();
   expect(env.navigate).toHaveBeenCalledWith("Family"); expect(env.api).not.toHaveBeenCalled();
-  expect(controls(render()).some(p => p.message?.includes("先在「家庭与设备」加入家庭"))).toBe(true);
+  expect(controls(render()).some(p => p.message?.includes("先在「家庭与同步」加入家庭"))).toBe(true);
 });
 it("stopping while the device token is still being read sends nothing", async () => {
   let give!: (token: string) => void;

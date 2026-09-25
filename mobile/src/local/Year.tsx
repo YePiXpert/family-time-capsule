@@ -69,7 +69,7 @@ function YearNote({ year }: { year: string }) {
           if (signal.aborted) throw new Error("已停止起草。");
           if (!token) {
             nav.navigate("Family");
-            throw new Error("先在「家庭与设备」加入家庭，再来起草寄语。");
+            throw new Error("先在「家庭与同步」加入家庭，再来起草寄语。");
           }
           const records = sortedRecords(state).filter(
             (r) => yearKey(r.date) === year,
@@ -119,7 +119,7 @@ export function YearEditor({ year, records }: { year: string; records: readonly 
       if (!active()) return;
       if (!token) {
         nav.navigate("Family");
-        throw new Error("先在「家庭与设备」加入家庭，再来建议目录。");
+        throw new Error("先在「家庭与同步」加入家庭，再来建议目录。");
       }
       const context = editorContext(year, records, state.media);
       const result = await api<unknown>("/ai/write", {

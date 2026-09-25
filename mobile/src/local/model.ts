@@ -521,7 +521,7 @@ export function mergePersons(
     ...new Set(ids.map((p) => (p === sourceId ? targetId : p))),
   ]);
 }
-/** 还没落款的记录 id：书架「都是{by}写的吗」卡与「我的落款」页都靠它数。 */
+/** 还没落款的记录 id：书架「都是{by}写的吗」卡与设置里的落款行都靠它数。 */
 export function unsignedRecords(s: Pick<Library, "records">): string[] {
   return Object.keys(s.records).filter((id) => !s.records[id]!.by);
 }

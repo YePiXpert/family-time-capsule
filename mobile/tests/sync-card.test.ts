@@ -22,7 +22,7 @@ vi.mock("react", () => ({
   useEffect: vi.fn(),
   useRef: () => ({ current: null }),
 }));
-vi.mock("react-native", () => ({ View: "View", Switch: "Switch", Alert: { alert: (...args: unknown[]) => env.alerts.push(args) } }));
+vi.mock("react-native", () => ({ View: "View", Switch: "Switch", StyleSheet: { hairlineWidth: 1 }, Alert: { alert: (...args: unknown[]) => env.alerts.push(args) } }));
 vi.mock("@react-navigation/native", () => ({ useFocusEffect: vi.fn() }));
 vi.mock("../src/local/backup", () => ({ BackupStopped: class extends Error {} }));
 vi.mock("../src/local/context", () => ({ useLibrary: () => ({ settings: {}, records: env.records }), useStore: () => ({}), useSyncStatus: () => ({ running: env.running }) }));

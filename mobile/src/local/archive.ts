@@ -150,6 +150,6 @@ export async function shareArchive(file: File): Promise<void> {
   await Sharing.shareAsync(file.uri, {
     mimeType: "application/zip",
     UTI: "public.zip-archive",
-    dialogTitle: "保存开放归档",
+    dialogTitle: "保存可阅读副本",
   });
 }

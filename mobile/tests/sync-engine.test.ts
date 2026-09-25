@@ -316,8 +316,8 @@ it("refuses to stack onto another key's backup and stops before uploading", asyn
   // vi.resetModules 之后引擎里的 SyncError 是另一份类定义，按名字与 code 认。
   expect((error as SyncError).name).toBe("SyncError");
   expect((error as SyncError).code).toBe("KEY_MISMATCH");
-  expect((error as SyncError).message).toContain("加入家人一起写");
-  expect((error as SyncError).message).toContain("12 词恢复码");
+  expect((error as SyncError).message).toContain("退出后重新加入");
+  expect((error as SyncError).message).toContain("家庭与同步");
   expect((error as SyncError).message).not.toContain("删除远端备份");
   expect(remote.puts()).toBe(4);
   const controller = new AbortController();
