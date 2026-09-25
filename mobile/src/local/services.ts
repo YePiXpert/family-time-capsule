@@ -1,4 +1,5 @@
 import { lineage } from "./hash";
+import { isOutOfSpace, messageOf } from "./errors";
 import { randomUUID } from "expo-crypto";
 import { File, Paths } from "expo-file-system";
 import { DOCS_DIR, LEGACY_DOCS_DIR } from "./brand";
@@ -286,7 +287,8 @@ async function receiveOneShare(
       originals.push(localUri);
     } catch (e) {
       // 空间不够是暂时的：整批不确认，腾出空间后下次启动重来；别的错才算这一项坏了。
-      if (outOfSpace(e)) {
+      // 自己的空间预检抛的是中文「空间不足」，也算暂时的。
+      if (isOutOfSpace(e) || /空间不足/.test(e instanceof Error ? e.message : "")) {
         for (const m of media) deleteMediaFiles(m);
         throw new Error("本机空间不足，分享的内容还留着，清理一些空间后再打开应用。");
       }
@@ -345,9 +347,6 @@ async function receiveOneShare(
     }
   return skipped;
 }
-const outOfSpace = (e: unknown) =>
-  (!!e && typeof e === "object" && (e as { code?: unknown }).code === "ENOSPC") ||
-  /ENOSPC|no space left|空间不足/i.test(e instanceof Error ? e.message : String(e));
 export async function receiveShares(store: LocalStore): Promise<void> {
   const failed: string[] = [];
   let skipped = 0;
@@ -364,9 +363,8 @@ export async function receiveShares(store: LocalStore): Promise<void> {
     try {
       skipped += await receiveOneShare(store, manifest);
     } catch (e) {
-      failed.push(
-        `一份分享未能保存：${e instanceof Error ? e.message : String(e)}`,
-      );
+      // 系统报的英文错误不直接给人看；自己写的中文说明原样带上。
+      failed.push(`一份分享未能保存：${messageOf(e)}`);
     }
   }
   // 单批失败不影响其余批次；有批未确认时会保留原生任务，下次启动重试。

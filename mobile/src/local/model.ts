@@ -95,8 +95,6 @@ export type SeriesItem = {
   /** 形如 "2026-09"，每系列内唯一；取自素材拍摄时间，缺省用记录日期。 */
   month: string;
 };
-/** 旧版新建时光系列的占位名，保留兼容旧库。 */
-export const SERIES_DEFAULT_NAME = "新时光系列";
 /** 旧数据种类：1.0.3 起不再新建、无页面；保留读写、合并、备份与归档以兼容旧库。 */
 export type LocalSeries = {
   id: string;
@@ -438,16 +436,6 @@ export function monthOfItem(
 }
 export function yearKey(date: string): string {
   return String(new Date(date).getFullYear());
-}
-/** 把 "YYYY-MM" 折成可比加减的序号。 */
-export function monthIndex(month: string): number {
-  const [y, m] = month.split("-").map(Number);
-  return y! * 12 + (m! - 1);
-}
-export function indexMonth(index: number): string {
-  const y = Math.floor(index / 12),
-    m = (index % 12) + 1;
-  return `${y}-${String(m).padStart(2, "0")}`;
 }
 /**
  * 按时刻比两个记录日期。库里有两种写法：日期选择器存 UTC（带 Z），照片拍摄时刻存不带时区的本地时间；

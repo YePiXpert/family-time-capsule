@@ -18,7 +18,6 @@ import { CHILD_FALLBACK } from "./brand";
 import { dateLabel, paperPalette, serif } from "./ui";
 import {
   CARD_WIDTH,
-  base64ToBytes,
   layoutKeepSake,
   pngBytesOfDataUrl,
 } from "./keepsake";
@@ -259,4 +258,3 @@ export async function prepareKeepSakePhoto(
   return { uri: result.uri, aspect };
 }
 
-export { base64ToBytes };
