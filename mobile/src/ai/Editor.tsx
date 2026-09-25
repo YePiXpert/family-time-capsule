@@ -413,7 +413,7 @@ export function AIEditor({
             />
           </Card>
         )}
-        <Text style={s.footnote}>由小米 MiMo 2.6 Pro 提供</Text>
+        <Text style={s.footnote}>由 GPT-6 Astra 提供</Text>
       </ScrollView>
     </SheetModal>
   );
