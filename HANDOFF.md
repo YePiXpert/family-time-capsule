@@ -1,19 +1,18 @@
 # 当前交付状态
 
-更新：2026-09-24。只记录当前事实与未完成事项；历史改动见 [CHANGELOG](CHANGELOG.md) 和 Git 历史。
+更新：2026-09-25。只记录当前事实与未完成事项；历史改动见 [CHANGELOG](CHANGELOG.md) 和 Git 历史。
 
 ## 源码与部署
 
 | 对象 | 当前状态 |
 | --- | --- |
-| 功能源码 | 手机 `de4e823616053e5497977da67ea3feabb7ebbd19`（iOS 动效打磨），服务端 `bc046e77b21e17a78dc693dea8319f83d2f5ac55`；均已推送 `origin/main` |
+| 功能源码 | 手机 `007c7e2e269135a0f03f464647498ef4b1a4c5b2`（1.1.3 发版提交），服务端 `bc046e77b21e17a78dc693dea8319f83d2f5ac55`；均已推送 `origin/main` |
 | 生产服务 | `bc046e7`，2026-09-24 15:36 UTC 部署成功；动效打磨只改手机，不需部署 |
 | 文字 AI | `gpt-6-astra`，五种任务统一 `medium` |
 | 语音转写 | `mimo-v2.5-asr`，与文字共用私有上游配置 |
-| 最新安装包 | **1.1.2 / 84**，源码 `7e4a8a0788ada4b8daa4552db49d6f308f598a81` |
-| 准备中 | **1.1.3 / 85**（动效打磨＋家庭可靠性），标签 `v1.1.3` 构建中，尚未交付 |
+| 最新安装包 | **1.1.3 / 85**，源码 `007c7e2e269135a0f03f464647498ef4b1a4c5b2`（动效打磨＋家庭可靠性） |
 
-源码、服务器和安装包分别交付。**本轮手机修复已提交，尚未进入安装包**；本轮未改版本号、未派发原生构建。不能把服务器更新当成手机也已更新。
+源码、服务器和安装包分别交付。家庭可靠性与 iOS 动效打磨的手机改动已进入 1.1.3 / 85；服务端无需随本版部署。
 
 ## 本轮完成
 
@@ -38,14 +37,19 @@
 
 ## 已交付安装包
 
-[Release 1.1.2](https://github.com/YePiXpert/family-time-capsule/releases/tag/v1.1.2) 来自 [run 36015813965](https://github.com/YePiXpert/family-time-capsule/actions/runs/36015813965)，八个必需作业成功。APK、未签名 IPA、build-source.json 与 SHA-256 已下载核对，Release 与构建产物相同；APK、iOS 主应用及分享扩展均为 1.1.2 / 84。
+[Release 1.1.3](https://github.com/YePiXpert/family-time-capsule/releases/tag/v1.1.3)：标签 `v1.1.3` → `007c7e2e269135a0f03f464647498ef4b1a4c5b2`，来自 [run 36088959231](https://github.com/YePiXpert/family-time-capsule/actions/runs/36088959231)，八个作业（含 GitHub Release）成功。APK、未签名 IPA、build-source.json 与 SHA-256 已下载核对，Release 与 CI 构建产物逐字节相同；APK（versionName／versionCode）、iOS 主应用及分享扩展均为 1.1.3 / 85。
 
-安卓 14 项检查、iOS 启动 9 项及 iOS 完整回归通过，报告源码均等于安装包完整 SHA。回归包含 PDF、开放归档、身份、专题册、跨月选材、备份恢复、损坏库恢复和原库保留。核验摘要：`/var/tmp/anan-1.1.2-verified/verification.json`。
+| 文件 | SHA-256 |
+| --- | --- |
+| `FamilyTimeCapsule-android.apk` | `f7aead539d4091340eb7cc7f9d27933d72e482166734625af411b1a33f4b3b8d` |
+| `FamilyTimeCapsule-ios-unsigned.ipa` | `f87900fd4273c235a9b745c16b879f9b75ef6b58068bf7fc383329a6b22f3d7d` |
+
+安卓冒烟（320／390，含封信「封好了」）、iOS 26.5 模拟器启动 9 项及完整回归两项通过，报告源码均等于安装包完整 SHA。核验摘要：`/var/tmp/anan-1.1.3-verified/verification.json`。
 
 ## 剩余事项
 
-1. 下次要求安装包时，将本轮手机恢复码、退出保护、设备失效判断、AI 缓存标识与 iOS 动效打磨一起交付；按 [版本规则](VERSIONING.md) 从已交付的 1.1.2 / 84 递增，先查同 SHA 构建再派发。
-2. **iOS 动效打磨已过两次验证构建，真机手感未验。** [run 36078927083](https://github.com/YePiXpert/family-time-capsule/actions/runs/36078927083)（源码 `92df6f7659a355c1ed8da7a39ec93b72f4fad1f6`，含 Astra 脚注）七个必需作业成功，三份报告源码与完整 SHA 相符；iOS 26.5 模拟器完整回归、启动 9 项、安卓 320／390 冒烟通过，截图可见原生推进、「封好了」、重启后不重播、AI 面板与新脚注。验证构建沿用 1.1.2 / 84，不作发布。仍需真机按 [PLAN-IOS-MOTION](docs/plans/PLAN-IOS-MOTION.md) 第七节验侧滑撤销、玻璃按压、减少动态、多任务遮挡和动画手感。
+1. 下次发包按 [版本规则](VERSIONING.md) 从已交付的 1.1.3 / 85 递增，先查同 SHA 构建再派发。
+2. **1.1.3 的 iOS 动效真机手感未验**（模拟器回归与截图已过）。在真机上按 [PLAN-IOS-MOTION](docs/plans/PLAN-IOS-MOTION.md) 第七节验侧滑撤销、玻璃按压、减少动态、多任务遮挡和动画手感。
 3. **两台真机完整验收尚未完成**。按 [验收清单](docs/ACCEPTANCE.md) 验扫码、双向声像同步、冲突留底、断网重启和备份换机；用测试资料演练恢复。
 4. 完成后持续使用，只修实际问题。公开注册、多租户、多孩子不做；密钥轮换已延期，不重新列为本轮前提。
 
