@@ -1,4 +1,4 @@
-import { yearKey, type LocalRecord, type Stored, compareDates } from "./model";
+import { newestFirst, yearKey, type LocalRecord, type Stored } from "./model";
 
 export type MediaFilter = "any" | "av" | "none";
 export type SearchFilters = {
@@ -28,16 +28,33 @@ export function recordMatches(
   query: string,
 ): boolean {
   if (!query) return true;
-  return `${record.title}\n${record.text}\n${record.location}`
-    .toLowerCase()
-    .includes(query.toLowerCase());
+  return haystackOf(record).includes(query.toLowerCase());
+}
+/** 记录冻结后不会再变：小写后的检索文本按记录对象记住，每敲一个字不必把全库再小写一遍。 */
+const haystacks = new WeakMap<object, string>();
+function haystackOf(record: Stored<LocalRecord>): string {
+  const cached = haystacks.get(record);
+  if (cached !== undefined) return cached;
+  const text = `${record.title}\n${record.text}\n${record.location}`.toLowerCase();
+  if (Object.isFrozen(record)) haystacks.set(record, text);
+  return text;
 }
 
 /** 一次列出的结果上限；再多就提示加筛选。 */
 export const SEARCH_LIMIT = 100;
 /** 全库搜索：标题/正文/地点不区分大小写包含 + 可选筛选，按日期倒序，最多 limit 条。 */
 export function searchRecords(
-  records: Stored<LocalRecord>[],
+  records: readonly Stored<LocalRecord>[],
+  query: string,
+  filters: SearchFilters = {},
+  kinds: Record<string, string> = {},
+  limit = SEARCH_LIMIT,
+): Stored<LocalRecord>[] {
+  return searchSortedRecords(newestFirst(records), query, filters, kinds, limit);
+}
+/** 同上，但 records 已按 sortedRecords 的次序排好（搜索页用缓存的那份）：顺着走，够数就停。 */
+export function searchSortedRecords(
+  records: readonly Stored<LocalRecord>[],
   query: string,
   filters: SearchFilters = {},
   kinds: Record<string, string> = {},
@@ -45,18 +62,17 @@ export function searchRecords(
 ): Stored<LocalRecord>[] {
   const needle = query.trim().toLowerCase();
   const media = filters.media ?? "any";
-  return records
-    .filter((r) => {
-      if (filters.first && !r.first) return false;
-      if (filters.quote && !r.quote) return false;
-      if (filters.year && yearKey(r.date) !== filters.year) return false;
-      if (filters.person && !r.personIds?.includes(filters.person))
-        return false;
-      if (filters.by && r.by !== filters.by) return false;
-      if (media === "av" && !hasAV(r, kinds)) return false;
-      if (media === "none" && r.mediaIds.length) return false;
-      return recordMatches(r, needle);
-    })
-    .sort((a, b) => compareDates(b.date, a.date) || a.id.localeCompare(b.id))
-    .slice(0, limit);
+  const found: Stored<LocalRecord>[] = [];
+  for (const r of records) {
+    if (found.length >= limit) break;
+    if (filters.first && !r.first) continue;
+    if (filters.quote && !r.quote) continue;
+    if (filters.year && yearKey(r.date) !== filters.year) continue;
+    if (filters.person && !r.personIds?.includes(filters.person)) continue;
+    if (filters.by && r.by !== filters.by) continue;
+    if (media === "av" && !hasAV(r, kinds)) continue;
+    if (media === "none" && r.mediaIds.length) continue;
+    if (recordMatches(r, needle)) found.push(r);
+  }
+  return found;
 }

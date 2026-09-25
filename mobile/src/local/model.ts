@@ -410,13 +410,16 @@ export function freezeEntity<T>(value: T): T {
 }
 /** 开库后冻结全部实体；此后每次 change 只需要冻结新替换进来的那几个。 */
 export function freezeLibrary(s: Library): void {
-  for (const kind of ENTITY_KINDS)
+  for (const kind of ENTITY_KINDS) {
     for (const entity of Object.values(s[kind])) freezeEntity(entity);
+    Object.freeze(s[kind]);
+  }
 }
-/** 只冻结这次动过的实体：其余的在开库或上一次提交时已经冻结。 */
+/** 只冻结这次动过的实体与集合：其余的在开库或上一次提交时已经冻结。 */
 export function freezeChanged(s: Library, delta: LibraryDelta): void {
   for (const { kind, id } of delta.changed)
     freezeEntity((s[kind] as Record<string, unknown>)[id]);
+  for (const kind of ENTITY_KINDS) Object.freeze(s[kind]);
 }
 export function recordTitle(r: Stored<RecordContent>): string {
   return (
@@ -444,12 +447,33 @@ export function yearKey(date: string): string {
 export function compareDates(a: string, b: string): number {
   return Date.parse(a) - Date.parse(b) || a.localeCompare(b);
 }
+/**
+ * 新的在前。好几页各自要这份排序，一万段时每次几十毫秒：提交后的集合是冻结的（freezeLibrary／
+ * freezeChanged），不相干的改动也不换对象，所以按集合对象记住排好的结果；工作副本照排不记。
+ */
+const sortedCache = new WeakMap<object, readonly Stored<LocalRecord>[]>();
 export function sortedRecords(
   s: Pick<Library, "records">,
-): Stored<LocalRecord>[] {
-  return Object.values(s.records).sort(
-    (a, b) => compareDates(b.date, a.date) || a.id.localeCompare(b.id),
-  );
+): readonly Stored<LocalRecord>[] {
+  const cached = sortedCache.get(s.records);
+  if (cached) return cached;
+  const sorted = Object.freeze(newestFirst(Object.values(s.records)));
+  if (Object.isFrozen(s.records)) sortedCache.set(s.records, sorted);
+  return sorted;
+}
+/** 新的在前，日期相同按 id；日期只解析一次（比较函数里 Date.parse 一万段要多花三倍）。 */
+export function newestFirst<T extends { id: string; date: string }>(
+  list: readonly T[],
+): T[] {
+  return list
+    .map((r) => ({ r, t: Date.parse(r.date) }))
+    .sort(
+      (a, b) =>
+        b.t - a.t ||
+        b.r.date.localeCompare(a.r.date) ||
+        a.r.id.localeCompare(b.r.id),
+    )
+    .map((k) => k.r);
 }
 export function recordsOfPerson(
   records: Stored<LocalRecord>[],

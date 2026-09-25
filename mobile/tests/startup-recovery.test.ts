@@ -66,7 +66,7 @@ vi.mock("../src/local/disk", () => ({ openLocalStore: vi.fn() }));
 vi.mock("../src/local/files", () => ({ ensureDirectories: vi.fn(), verifyMedia: vi.fn() }));
 vi.mock("../src/local/context", () => ({
   StoreContext: { Provider: "StoreProvider" }, SyncStatusContext: { Provider: "SyncProvider" },
-  useLibrary: vi.fn(), useStore: vi.fn(),
+  useLibrary: vi.fn(), useLibraryValue: vi.fn(), useStore: vi.fn(),
 }));
 vi.mock("../src/local/ui", () => ({
   LocalTheme: "LocalTheme", Button: "Button", Card: "Card", ErrorText: "ErrorText", Page: "Page", Text: "Text",

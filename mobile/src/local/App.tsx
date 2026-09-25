@@ -6,6 +6,7 @@ import {
   Component,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -49,7 +50,7 @@ import * as LocalAuthentication from "expo-local-authentication";
 import {
   StoreContext,
   SyncStatusContext,
-  useLibrary,
+  useLibraryValue,
   useStore,
 } from "./context";
 import {
@@ -153,18 +154,33 @@ function Root() {
   const store = useStore();
   const syncStatus = useSyncStatusValue();
   useAutoSync(store);
-  const state = useLibrary(),
+  const welcome = useLibraryValue((l) => l.welcome),
+    lockEnabled = useLibraryValue((l) => l.settings.lockEnabled === true),
     s = useStyles(),
     theme = useTheme();
   const reduceMotion = theme.reduceMotion;
+  const navTheme = useMemo(() => {
+    const base = theme.dark ? DarkTheme : DefaultTheme;
+    return {
+      ...base,
+      colors: {
+        ...base.colors,
+        background: theme.colors.paper,
+        card: theme.colors.paper,
+        text: theme.colors.ink,
+        primary: theme.colors.accent,
+        border: theme.colors.line,
+      },
+    };
+  }, [theme]);
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
-    [locked, setLocked] = useState(state.settings.lockEnabled === true),
+    [locked, setLocked] = useState(lockEnabled),
     // iOS 切到多任务界面前先 inactive、快照在进后台时拍：先盖一层纸面，快照里不露内容。
     [covered, setCovered] = useState(false);
   useEffect(() => {
     const sub = AppState.addEventListener("change", (status) => {
-      if (!state.settings.lockEnabled) return;
+      if (!lockEnabled) return;
       // 退到后台即重新上锁；回到前台由解锁门接管。只在 background 上锁：iOS 拉下控制中心、
       // 弹权限框、面容验证本身都只是 inactive，不该把人锁在门外，只盖一层、回来就掀开。
       if (status === "background") {
@@ -175,7 +191,7 @@ function Root() {
       if (Platform.OS === "ios") setCovered(status !== "active");
     });
     return () => sub.remove();
-  }, [state.settings.lockEnabled]);
+  }, [lockEnabled]);
   // 闲时巡检：每次退到后台完整校验少量素材，跨会话逐步覆盖全库。
   const patrolled = useRef(new Set<string>());
   useEffect(() => {
@@ -222,7 +238,7 @@ function Root() {
       unsubscribe();
     };
   }, [store]);
-  if (!state.welcome)
+  if (!welcome)
     return (
       <CenteredPage>
         <Card style={{ padding: 20, borderRadius: 24 }}>
@@ -261,19 +277,7 @@ function Root() {
         accessibilityElementsHidden={locked}
         importantForAccessibility={locked ? "no-hide-descendants" : "auto"}
       >
-      <NavigationContainer
-        theme={{
-          ...(theme.dark ? DarkTheme : DefaultTheme),
-          colors: {
-            ...(theme.dark ? DarkTheme : DefaultTheme).colors,
-            background: theme.colors.paper,
-            card: theme.colors.paper,
-            text: theme.colors.ink,
-            primary: theme.colors.accent,
-            border: theme.colors.line,
-          },
-        }}
-      >
+      <NavigationContainer theme={navTheme}>
         {error ? (
           <View
             style={{

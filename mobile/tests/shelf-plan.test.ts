@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { heroItems, shelfTiles } from "../src/local/shelf-plan";
+import { heroItems, shelfIndex, shelfTiles } from "../src/local/shelf-plan";
+import { monthKey, yearKey } from "../src/local/model";
 
 const none = { firsts: 0, quotes: 0, albumIds: [], letterIds: [] };
 
@@ -91,5 +92,24 @@ describe("heroItems", () => {
     expect(items.map((item) => item.record.id)).toEqual(
       records.slice(0, 10).map((r) => r.id),
     );
+  });
+});
+
+describe("shelfIndex", () => {
+  it("matches the per-render passes it replaced: months, years, counts and month buckets", () => {
+    const records = [
+      { id: "a", date: "2026-09-20T10:00:00.000Z", first: true, quote: false },
+      { id: "b", date: "2026-09-01T10:00:00.000Z", first: false, quote: true },
+      { id: "c", date: "2026-08-31T10:00:00.000Z", first: false, quote: false },
+      { id: "d", date: "2025-12-31T10:00:00.000Z", first: true, quote: true },
+    ];
+    const index = shelfIndex(records);
+    expect(index.months).toEqual([...new Set(records.map((r) => monthKey(r.date)))]);
+    expect(index.years).toEqual([...new Set(records.map((r) => yearKey(r.date)))]);
+    expect(index.firsts).toBe(2);
+    expect(index.quotes).toBe(2);
+    for (const month of index.months)
+      expect(index.byMonth.get(month)).toEqual(records.filter((r) => monthKey(r.date) === month));
+    expect(shelfIndex([]).months).toEqual([]);
   });
 });

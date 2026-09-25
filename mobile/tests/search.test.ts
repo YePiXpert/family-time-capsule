@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { emptyContent, type LocalRecord } from "../src/local/model";
-import { SEARCH_LIMIT, searchRecords } from "../src/local/search";
+import { emptyContent, freezeEntity, sortedRecords, type LocalRecord } from "../src/local/model";
+import { SEARCH_LIMIT, searchRecords, searchSortedRecords } from "../src/local/search";
 
 const record = (
   id: string,
@@ -116,4 +116,30 @@ it("默认最多列 100 段，调用方可多取一条判断还有更早的", ()
   }));
   expect(searchRecords(many, "散步")).toHaveLength(SEARCH_LIMIT);
   expect(searchRecords(many, "散步", {}, {}, SEARCH_LIMIT + 1)).toHaveLength(SEARCH_LIMIT + 1);
+});
+
+it("搜索页走缓存的排序：结果与逐次排序的全库搜索一致，够数就停", () => {
+  const many = Array.from({ length: 300 }, (_, i) =>
+    freezeEntity(
+      record(`r${String(i).padStart(3, "0")}`, {
+        date: new Date(Date.UTC(2026, 0, 1 + (i % 40), i % 24)).toISOString(),
+        text: i % 3 ? "去公园散步" : "在家里",
+        first: i % 7 === 0,
+        by: i % 2 ? "爸爸" : "妈妈",
+      }),
+    ),
+  );
+  const map = Object.freeze(Object.fromEntries(many.map((r) => [r.id, r])));
+  const sorted = sortedRecords({ records: map });
+  expect(sortedRecords({ records: map })).toBe(sorted);
+  for (const [query, filters, limit] of [
+    ["", {}, SEARCH_LIMIT],
+    ["散步", {}, SEARCH_LIMIT + 1],
+    ["家里", { first: true }, SEARCH_LIMIT],
+    ["", { by: "爸爸", year: "2026" }, 5],
+    ["没有这句", {}, SEARCH_LIMIT],
+  ] as const)
+    expect(searchSortedRecords(sorted, query, filters, {}, limit)).toEqual(
+      searchRecords([...many].reverse(), query, filters, {}, limit),
+    );
 });
