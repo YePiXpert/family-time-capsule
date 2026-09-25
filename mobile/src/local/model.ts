@@ -1117,12 +1117,16 @@ export function validateLibrary(value: unknown): asserts value is Library {
     for (const key of Object.keys(s[kind]))
       if (!validEntity(s, kind, key)) throw invalidLibrary();
 }
+/** 没有别的实体或库根指向它们（validEntity／validRoot 里没有 s.drafts／s.selections 的引用）：删掉只影响自己。 */
+export const LEAF_KINDS: readonly EntityKind[] = ["drafts", "selections"];
 /**
- * 一次 change 之后的校验。只增只改时只看根与动过的那几条；一旦有删除就整库重来
+ * 一次 change 之后的校验。只增只改时只看根与动过的那几条；删了别处可能指向的实体就整库重来
  * ——删掉一条记录会让相册、选材、系列里指向它的引用一起失效，只看改动是看不见的。
+ * 保存记录总会删掉它的草稿：草稿没人指向，不必为它整库重验（一万段时每次保存省下六十毫秒）。
  */
 export function validateChange(s: Library, delta: LibraryDelta): void {
-  if (delta.removed.length) return validateLibrary(s);
+  if (delta.removed.some(({ kind }) => !LEAF_KINDS.includes(kind)))
+    return validateLibrary(s);
   if (!validRoot(s)) throw invalidLibrary();
   for (const { kind, id } of delta.changed)
     if (!validEntity(s, kind, id)) throw invalidLibrary();
