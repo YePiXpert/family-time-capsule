@@ -116,6 +116,7 @@ it("round-trips a v2 state, tolerates missing optional fields and drops junk in 
       conflicts: 1,
     },
     lastError: "x",
+    joining: true as const,
   };
   state.writeRemoteState(full);
   expect(await state.readRemoteState()).toEqual(full);
@@ -130,6 +131,7 @@ it("round-trips a v2 state, tolerates missing optional fields and drops junk in 
       joinedAt: "not a time",
       autoSync: "yes",
       deviceId: 7,
+      joining: "yes",
     }),
   );
   expect(await state.readRemoteState("2026-09-21T03:00:00.000Z")).toEqual({

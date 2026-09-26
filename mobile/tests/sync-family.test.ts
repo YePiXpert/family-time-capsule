@@ -1246,9 +1246,10 @@ it("标上「第一次」又取消：经过远端与 base.json，另一台跟上
     expect(state.lastSyncSummary!.pulled).toBe(0);
   }
 }, 30000);
-// 已知局限：名字、人物这些没有时间戳的值改回见过的一枚传不开。曾试过按「各台上次发布的值」认出改回去，
-// 三台以上会把别人的采纳也当成新改动、来回翻个不停（复审 2026-09-26），撤掉了。这里钉住：怎么同步都会停下来。
-it("三台里一台改名、同步、没等下一轮又改回：之后几轮都安静下来，不来回翻、不反复发布", async () => {
+// 曾试过按「各台上次发布的值」认出改回去，三台以上会把别人的采纳也当成新改动、来回翻个不停（复审 2026-09-26），
+// 撤掉了。现在根值带版本时刻：改回去是一次新改动，全家跟上；别人的采纳带着原来的时刻，不算新改动。
+// 这里钉住：怎么同步都会停下来，而且三台一致，都是改回去的那个名字。
+it("三台里一台改名、同步、没等下一轮又改回：之后几轮都安静下来，不来回翻、不反复发布，三台都改回去", async () => {
   const remote = fakeRemote();
   const a = await phone();
   const depsA = { transport: remote.client("A"), key };
@@ -1286,4 +1287,152 @@ it("三台里一台改名、同步、没等下一轮又改回：之后几轮都�
     last = line.join(" ");
   }
   expect(last).toBe("0/0 0/0 0/0");
+  expect([a, b, c].map((p) => p.store.get().profile.name)).toEqual(["桉桉", "桉桉", "桉桉"]);
+}, 60000);
+it("加入前在设置里填过名字（时刻比家里新）：头一回并入听家里的，只补家里没有的；家里的名字不被改掉", async () => {
+  const remote = fakeRemote();
+  const a = await phone();
+  const depsA = { transport: remote.client("A"), key };
+  await a.store.change((s) => {
+    s.profile = { ...s.profile, name: "桉桉" };
+  });
+  await a.family.joinFamily(a.store, key, depsA);
+  const b = await phone();
+  const depsB = { transport: remote.client("B"), key };
+  // 爸爸装好应用，先在设置里填了个小名和格言，时刻都比家里的新。
+  await b.store.change((s) => {
+    s.profile = { ...s.profile, name: "宝宝", motto: "入淮清洛渐漫漫" };
+  });
+  expect(b.store.get().rootStamps?.["profile:name"]).toBeDefined();
+  await b.family.joinFamily(b.store, key, depsB);
+  expect([b.store.get().profile.name, b.store.get().profile.motto]).toEqual(["桉桉", "入淮清洛渐漫漫"]);
+  a.activate();
+  await a.family.runFamilySync(a.store, depsA);
+  expect([a.store.get().profile.name, a.store.get().profile.motto]).toEqual(["桉桉", "入淮清洛渐漫漫"]);
+  // 之后照常改：新的改动带时刻，传给家人。
+  b.activate();
+  await b.store.change((s) => {
+    s.profile = { ...s.profile, name: "清洛" };
+  });
+  await b.family.runFamilySync(b.store, depsB);
+  a.activate();
+  await a.family.runFamilySync(a.store, depsA);
+  expect(a.store.get().profile.name).toBe("清洛");
+}, 30000);
+it("加入后头一轮同步断网：加入标记留着，重试照样听家里的；并进来之后标记才去掉", async () => {
+  const remote = fakeRemote();
+  const a = await phone();
+  const depsA = { transport: remote.client("A"), key };
+  await a.store.change((s) => {
+    s.profile = { ...s.profile, name: "桉桉", motto: "入淮清洛渐漫漫" };
+  });
+  await a.family.joinFamily(a.store, key, depsA);
+  const b = await phone();
+  const { SyncError } = await import("../src/sync/transport");
+  const flaky = remote.client("B");
+  let down = true;
+  const depsB = {
+    key,
+    transport: {
+      ...flaky,
+      get: async (id: string, signal?: AbortSignal) => {
+        if (down) throw new SyncError("NETWORK", "网络断了。");
+        return flaky.get(id, signal);
+      },
+    },
+  };
+  await b.store.change((s) => {
+    s.profile = { ...s.profile, name: "宝宝" };
+  });
+  await expect(b.family.joinFamily(b.store, key, depsB)).rejects.toThrow("网络断了");
+  expect((await b.state.readRemoteState())?.joining).toBe(true);
+  expect(b.store.get().profile.name).toBe("宝宝");
+  // 应用被杀、重新打开之后重试：还是头一回加入。
+  down = false;
+  const done = await b.family.runFamilySync(b.store, depsB);
+  expect(done.joining).toBeUndefined();
+  expect((await b.state.readRemoteState())?.joining).toBeUndefined();
+  expect([b.store.get().profile.name, b.store.get().profile.motto]).toEqual(["桉桉", "入淮清洛渐漫漫"]);
+  a.activate();
+  await a.family.runFamilySync(a.store, depsA);
+  expect(a.store.get().profile.name).toBe("桉桉");
+  // 同一把钥匙再点一次加入（上一次没成功）也保留标记。
+  const c = await phone();
+  // 类要从这台手机的模块注册表里取（phone() 重置了模块）。
+  const { SyncError: Offline } = await import("../src/sync/transport");
+  const depsC = { key, transport: { ...remote.client("C"), get: async () => { throw new Offline("NETWORK", "网络断了。"); } } };
+  await expect(c.family.joinFamily(c.store, key, depsC)).rejects.toThrow();
+  await expect(c.family.joinFamily(c.store, key, depsC)).rejects.toThrow();
+  expect((await c.state.readRemoteState())?.joining).toBe(true);
+}, 30000);
+it("建家的那台：加入前填的名字、格言带着时刻发出去，后加入的手机照收；加入的手机只补家里没有的", async () => {
+  const remote = fakeRemote();
+  const a = await phone();
+  const depsA = { transport: remote.client("A"), key };
+  await a.store.change((s) => {
+    s.profile = { ...s.profile, name: "桉桉", motto: "入淮清洛渐漫漫" };
+  });
+  const stamps = a.store.get().rootStamps;
+  await a.family.joinFamily(a.store, key, depsA);
+  // 家里还没有别的清单：什么都不让，时刻原样。
+  expect(a.store.get().rootStamps).toEqual(stamps);
+  expect((await a.state.readRemoteState())?.joining).toBeUndefined();
+  const b = await phone();
+  const depsB = { transport: remote.client("B"), key };
+  await b.store.change((s) => {
+    s.profile = { ...s.profile, birthday: "2025-01-01", fullName: "李清洛" };
+    s.yearNotes["2026"] = "爸爸写的";
+  });
+  const filled = b.store.get().rootStamps!;
+  await b.family.joinFamily(b.store, key, depsB);
+  expect(b.store.get().profile).toMatchObject({ name: "桉桉", motto: "入淮清洛渐漫漫", birthday: "2025-01-01", fullName: "李清洛" });
+  expect(b.store.get().rootStamps!["profile:name"]).toBe(stamps!["profile:name"]);
+  expect(b.store.get().rootStamps!["profile:birthday"]).toBe(filled["profile:birthday"]);
+  a.activate();
+  await a.family.runFamilySync(a.store, depsA);
+  expect(a.store.get().profile).toMatchObject({ name: "桉桉", motto: "入淮清洛渐漫漫", birthday: "2025-01-01", fullName: "李清洛" });
+  expect(a.store.get().yearNotes["2026"]).toBe("爸爸写的");
+}, 30000);
+it("恢复一份旧备份：备份里的旧名字、旧人物不传给家人，家里清空的格言也不回来；备份带着版本时刻", async () => {
+  const remote = fakeRemote();
+  const a = await phone();
+  const depsA = { transport: remote.client("A"), key };
+  await a.store.change((s) => {
+    s.profile = { ...s.profile, name: "桉桉", motto: "入淮清洛渐漫漫" };
+    s.persons.p = { id: "p", name: "奶奶" };
+  });
+  await a.family.joinFamily(a.store, key, depsA);
+  const b = await phone();
+  const depsB = { transport: remote.client("B"), key };
+  await b.family.joinFamily(b.store, key, depsB);
+  const all = [[a, depsA], [b, depsB]] as const;
+  const round = async () => {
+    for (const [p, deps] of all) {
+      p.activate();
+      await p.family.runFamilySync(p.store, deps);
+    }
+  };
+  await round();
+  b.activate();
+  const stampedBefore = b.store.get().rootStamps;
+  expect(stampedBefore?.["profile:name"]).toBeDefined();
+  const saved = await b.backup.createBackup(b.store.get());
+  a.activate();
+  await a.store.change((s) => {
+    const { motto: _motto, ...profile } = s.profile;
+    s.profile = { ...profile, name: "清洛" };
+    s.persons.p = { ...s.persons.p!, name: "外婆" };
+  });
+  await round();
+  b.activate();
+  expect(b.store.get().profile.name).toBe("清洛");
+  await b.backup.restoreBackup(b.store, saved);
+  await b.state.forgetMergeHistory();
+  // 换回的是备份那一刻的库，连同它的版本时刻，不当作一次新改动。
+  expect(b.store.get().profile).toMatchObject({ name: "桉桉", motto: "入淮清洛渐漫漫" });
+  expect(b.store.get().rootStamps).toEqual(stampedBefore);
+  for (let i = 0; i < 3; i++) await round();
+  for (const [p] of all)
+    expect({ name: p.store.get().profile.name, motto: p.store.get().profile.motto, person: p.store.get().persons.p!.name })
+      .toEqual({ name: "清洛", motto: undefined, person: "外婆" });
 }, 60000);

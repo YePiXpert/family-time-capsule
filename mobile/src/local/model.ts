@@ -102,7 +102,12 @@ export type LocalSeries = {
   items: SeriesItem[];
   updatedAt: string;
 };
-export type LocalPerson = { id: string; name: string };
+export type LocalPerson = {
+  id: string;
+  name: string;
+  /** 最近一次改名的时刻（LocalStore.change 盖上）；1.1.6 及更早建的人物没有。 */
+  updatedAt?: string;
+};
 /** 时间胶囊信：现在写，封存到 openAt 那天才拆。封存后不再可改。 */
 export type LocalLetter = {
   id: string;
@@ -207,7 +212,61 @@ export type Library = {
    * 「对方删了」与「对方还没收到」，否则合并会把删掉的东西送回来。随备份走、不进开放归档、永不清理。旧库无此字段。
    */
   tombstones?: Record<string, string>;
+  /**
+   * 共享根值的版本：资料各字段（"profile:name"…）、年度寄语与封面（"yearNotes:2026"、"yearCovers:2026"）
+   * 各自最近一次改动的 ISO 时刻。LocalStore.change 在值变了时盖上，合并与恢复自己写；清空了的值也留着时刻
+   * （那是一次改动）。改回见过的值也有新时刻，家人才跟得上。选片（yearPicks）自带 updatedAt，不在这里。旧库无此字段。
+   */
+  rootStamps?: Record<string, string>;
 };
+/** 资料按字段各一块：一台改名字、另一台改生日，两边都留下。 */
+export const PROFILE_FIELDS = ["name", "fullName", "motto", "birthday", "avatarId"] as const;
+export type ProfileField = (typeof PROFILE_FIELDS)[number];
+/** 带版本的根值 id：资料字段、某年的寄语、某年的封面。 */
+export const ROOT_STAMP_KEY = /^(profile:(name|fullName|motto|birthday|avatarId)|(yearNotes|yearCovers):\d{4})$/;
+/** 库里现有的带版本根值 id（不含只剩时刻、值已清掉的那些）。 */
+export function versionedRootIds(lib: Library): string[] {
+  return [
+    ...PROFILE_FIELDS.map((f) => `profile:${f}`),
+    ...Object.keys(lib.yearNotes).map((y) => `yearNotes:${y}`),
+    ...Object.keys(lib.yearCovers).map((y) => `yearCovers:${y}`),
+  ];
+}
+/** 一个共享根值（资料字段、某年寄语／封面／选片）；没有就是 undefined。 */
+export function rootValue(lib: Library, id: string): unknown {
+  if (id.startsWith("profile:"))
+    return lib.profile[id.slice(8) as ProfileField];
+  const [field, year] = id.split(":") as ["yearNotes" | "yearCovers" | "yearPicks", string];
+  return lib[field]?.[year];
+}
+/** 新的时刻：现在，但至少比上一版晚一毫秒——上一版可能来自时钟快的手机，改动得排在它后面。 */
+export function nextStamp(previous: string | undefined, now: string): string {
+  const after = previous === undefined ? NaN : Date.parse(previous) + 1;
+  return after > Date.parse(now) ? new Date(after).toISOString() : now;
+}
+/**
+ * 给这次 change 改到的共享根值与人物盖上新时刻（LocalStore.change 在校验之前调用）。
+ * 值没变的不动；这次改动自己写了时刻的（合并、恢复）也不动。
+ */
+export function stampChanges(prev: Library, next: Library, delta: LibraryDelta, now: string): void {
+  if (prev.profile !== next.profile || prev.yearNotes !== next.yearNotes || prev.yearCovers !== next.yearCovers) {
+    const before = prev.rootStamps ?? {},
+      after = next.rootStamps ?? {};
+    let stamps: Record<string, string> | undefined;
+    for (const id of new Set([...versionedRootIds(prev), ...versionedRootIds(next)])) {
+      if (rootValue(prev, id) === rootValue(next, id) || before[id] !== after[id]) continue;
+      (stamps ??= { ...after })[id] = nextStamp(before[id], now);
+    }
+    if (stamps) next.rootStamps = stamps;
+  }
+  for (const { kind, id } of delta.changed) {
+    if (kind !== "persons") continue;
+    const p = next.persons[id]!,
+      old = prev.persons[id];
+    if (old ? p.updatedAt !== old.updatedAt || p.name === old.name : p.updatedAt !== undefined) continue;
+    next.persons[id] = { ...p, updatedAt: nextStamp(old?.updatedAt, now) };
+  }
+}
 export const TOMBSTONE_KINDS = [
   "records",
   "albums",
@@ -356,6 +415,7 @@ export function forkLibrary(s: Library): Library {
     yearCovers: { ...s.yearCovers },
     ...(s.yearPicks ? { yearPicks: { ...s.yearPicks } } : {}),
     ...(s.tombstones ? { tombstones: { ...s.tombstones } } : {}),
+    ...(s.rootStamps ? { rootStamps: { ...s.rootStamps } } : {}),
     receivedShares: [...s.receivedShares],
     records: { ...s.records },
     drafts: { ...s.drafts },
@@ -850,6 +910,11 @@ const isMap = (v: unknown) =>
   typeof v === "object" &&
   !Array.isArray(v) &&
   Object.keys(v).every(isId);
+const isPlainMap = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === "object" && !Array.isArray(v);
+/** 版本时刻：ISO 形状、解析得出、长度有限（不收任意长串）。 */
+const isTime = (v: unknown) =>
+  typeof v === "string" && v.length <= 32 && /^\d{4}-\d{2}-\d{2}T/.test(v) && Number.isFinite(Date.parse(v));
 const isFileName = (v: unknown) =>
   typeof v === "string" && /^[a-zA-Z0-9_-]+\.[a-z0-9]{1,8}$/.test(v);
 /** 落款：缺省，或 1–20 字且首尾无空白。 */
@@ -966,6 +1031,11 @@ function validRoot(s: Library): boolean {
             !/^[a-z-]{1,32}$/.test(kind) ||
             !isText(at) ||
             !Number.isFinite(Date.parse(at)),
+        ))) &&
+    (s.rootStamps === undefined ||
+      (isPlainMap(s.rootStamps) &&
+        Object.entries(s.rootStamps).every(
+          ([key, at]) => ROOT_STAMP_KEY.test(key) && isTime(at),
         ))) &&
     (s.tombstones === undefined ||
       (!!s.tombstones &&
@@ -1158,6 +1228,7 @@ function validEntity(s: Library, kind: EntityKind, key: string): boolean {
   return (
     !!p &&
     key === p.id &&
+    (p.updatedAt === undefined || isTime(p.updatedAt)) &&
     isText(p.name) &&
     p.name.trim().length >= 1 &&
     p.name.length <= 50
