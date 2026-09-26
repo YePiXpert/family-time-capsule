@@ -3,7 +3,7 @@ import type { DailyQuestionCache, Library, LocalRecord, Stored, YearPicks, Recor
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 import { dateLabel, toDayKey } from "../local/dates";
-import { monthKey, recordTitle, yearKey, compareDates } from "../local/model";
+import { clipText, monthKey, recordTitle, yearKey, compareDates } from "../local/model";
 import type { AIJob, AIProposal, AIResult, WritingMode } from "./types";
 /** 单次润色的正文上限；超限必须明确提示，不允许静默截断。与服务端一致。 */
 export const POLISH_BODY_LIMIT = 2000;
@@ -151,13 +151,13 @@ export function recapContext(
   const parts = [
     `这一年共有 ${records.length} 条记录。`,
     firsts.length ? `第一次：${firsts.join("、")}` : "",
-    quotes.length ? `她说的话：${quotes.slice(0, 20).map((q) => q.slice(0, 60)).join("、")}` : "",
+    quotes.length ? `她说的话：${quotes.slice(0, 20).map((q) => clipText(q, 60)).join("、")}` : "",
     `记录标题：\n${records.map(titleOf).slice(0, 80).join("\n")}`,
     existingNote.trim()
-      ? `已写的寄语（仅参考语气与已覆盖内容，不要重复）：\n${existingNote.trim().slice(0, 500)}`
+      ? `已写的寄语（仅参考语气与已覆盖内容，不要重复）：\n${clipText(existingNote.trim(), 500)}`
       : "",
   ].filter(Boolean);
-  return parts.join("\n").slice(0, 3800);
+  return clipText(parts.join("\n"), 3800);
 }
 
 /** 失败后的重试选项；RESULT_EXPIRED 表示原请求已终结，只能重新生成并计入新额度。 */
@@ -182,10 +182,10 @@ export function retryPlan(errorCode: string | null): {
 
 /** 显式投影标题与日期：即使调用者传来完整记录，也不序列化其他字段。 */
 const recentTitles = (recent: { title: string; date: string }[]) =>
-  recent.slice(0, 10).map(({ title, date }) => `${date.slice(0, 10)} ${title.slice(0, 40)}`).join("\n");
+  recent.slice(0, 10).map(({ title, date }) => `${date.slice(0, 10)} ${clipText(title, 40)}`).join("\n");
 const signature = (by?: string, limit = 20) =>
-  by?.trim() ? `落款：${by.trim().slice(0, limit)}\n` : "";
-const ageContext = (ageLabel: string | null) => `她的月龄：${ageLabel?.slice(0, 40) || "（未填写或尚未出生）"}`;
+  by?.trim() ? `落款：${clipText(by.trim(), limit)}\n` : "";
+const ageContext = (ageLabel: string | null) => `她的月龄：${(ageLabel && clipText(ageLabel, 40)) || "（未填写或尚未出生）"}`;
 
 export function askContext(input: {
   by?: string;
@@ -196,10 +196,10 @@ export function askContext(input: {
   first: boolean;
   recent: { title: string; date: string }[];
 }): string {
-  const header = `${signature(input.by)}${ageContext(input.ageLabel)}\n记录日期：${input.date.slice(0, 10)}\n已标第一次：${input.first ? "是" : "否"}\n标题：${input.title.slice(0, 100)}\n正文：\n`;
+  const header = `${signature(input.by)}${ageContext(input.ageLabel)}\n记录日期：${input.date.slice(0, 10)}\n已标第一次：${input.first ? "是" : "否"}\n标题：${clipText(input.title, 100)}\n正文：\n`;
   const tail = `\n最近的记录（只有标题与日期）：\n${recentTitles(input.recent)}`;
   const clipped = input.text.length > 3000 ? "\n（正文较长，只送前 3000 字）" : "";
-  return `${header}${input.text.slice(0, Math.min(3000, 3800 - header.length - tail.length - clipped.length))}${clipped}${tail}`;
+  return `${header}${clipText(input.text, Math.min(3000, 3800 - header.length - tail.length - clipped.length))}${clipped}${tail}`;
 }
 export function questionContext(input: {
   ageLabel: string | null;
@@ -207,7 +207,7 @@ export function questionContext(input: {
   recent: { title: string; date: string }[];
   asked: string[];
 }): string {
-  return `${ageContext(input.ageLabel)}\n今天日期：${input.today.slice(0, 10)}\n最近的记录（只有标题与日期）：\n${recentTitles(input.recent)}\n最近 7 天问过的问题：\n${input.asked.slice(-7).map((q) => q.slice(0, 60)).join("\n")}`.slice(0, 2000);
+  return clipText(`${ageContext(input.ageLabel)}\n今天日期：${input.today.slice(0, 10)}\n最近的记录（只有标题与日期）：\n${recentTitles(input.recent)}\n最近 7 天问过的问题：\n${input.asked.slice(-7).map((q) => clipText(q, 60)).join("\n")}`, 2000);
 }
 export function questionPlan(
   cache: DailyQuestionCache | undefined,
@@ -249,11 +249,11 @@ export function editorContext(year: string, records: readonly Stored<LocalRecord
     selected.some((r) => !r.id || r.id.length > 100))
     throw new AIError("INVALID_INPUT", "这一年的记录清单格式不对，请检查后重试。");
   // slice 的限额含省略号，JSON 转义的体积也算在整体限额里。
-  const clip = (text: string, max: number) => text.length <= max ? text : max > 1 ? `${text.slice(0, max - 1)}…` : "";
+  const clip = (text: string, max: number) => text.length <= max ? text : max > 1 ? `${clipText(text, max - 1)}…` : "";
   for (const [textMax, titleMax] of EDITOR_CLIPS) {
     const context = JSON.stringify({ year, records: selected.map((r, i) => ({
-      id: String(i + 1), date: toDayKey(new Date(r.date)), ...(r.by ? { by: r.by.slice(0, 20) } : {}),
-      title: recordTitle(r).slice(0, titleMax), text: clip(r.text, textMax),
+      id: String(i + 1), date: toDayKey(new Date(r.date)), ...(r.by ? { by: clipText(r.by, 20) } : {}),
+      title: clipText(recordTitle(r), titleMax), text: clip(r.text, textMax),
       first: r.first, quote: r.quote === true,
       photos: r.mediaIds.some((id) => media[id]?.kind === "image"),
     })) });

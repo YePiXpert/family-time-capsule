@@ -258,6 +258,29 @@ const recentInterviewRecords = Array.from({ length: 12 }, (_, i) => ({
   title: `${i}号标题${"题".repeat(50)}`, date: `2026-09-${String(i + 1).padStart(2, "0")}`,
   text: "别的记录的秘密正文", photos: ["秘密照片"],
 }));
+describe("发给 AI 的文字截断不劈开表情", () => {
+  // 每个表情占两个 UTF-16 单位：按单位数截到奇数位，旧写法会留下半个表情。
+  const emoji = (n: number) => "😀".repeat(n);
+  it("编者清单的正文、标题与落款", () => {
+    const records = [editorRecord("r1", { by: `落${emoji(20)}`, title: `题${emoji(60)}`, text: emoji(3000) })];
+    const { context } = editorContext("2026", records, {});
+    const parsed = JSON.parse(context);
+    for (const field of ["by", "title", "text"]) expect(parsed.records[0][field].isWellFormed(), field).toBe(true);
+    expect(parsed.records[0].text.length).toBeLessThanOrEqual(4000);
+    expect(parsed.records[0].title.length).toBeLessThanOrEqual(100);
+    expect(parsed.records[0].by.length).toBeLessThanOrEqual(20);
+  });
+  it("访谈、每日问题与年度寄语的上下文", () => {
+    const ask = askContext({ by: `爸${emoji(20)}`, ageLabel: `月${emoji(30)}`, date: "2026-09-05", title: `题${emoji(80)}`, text: `文${emoji(3000)}`, first: false, recent: [{ title: `近${emoji(30)}`, date: "2026-09-01" }] });
+    expect(ask.isWellFormed()).toBe(true);
+    expect(ask.length).toBeLessThanOrEqual(3800);
+    const question = questionContext({ ageLabel: null, today: "2026-09-05", recent: [], asked: [`问${emoji(40)}`, `问${emoji(1000)}`] });
+    expect(question.isWellFormed()).toBe(true);
+    const recap = recapContext([{ title: `题${emoji(3000)}`, date: "2026-01-01", first: false }], `寄${emoji(300)}`, [`说${emoji(40)}`]);
+    expect(recap.isWellFormed()).toBe(true);
+    expect(recap.length).toBeLessThanOrEqual(3800);
+  });
+});
 describe("interviewer contexts", () => {
   it("asks about this draft, signature and age with only ten short recent titles", () => {
     const context = askContext({ by: "爸爸", ageLabel: "4 个月", date: "2026-09-05", title: "第一次翻身", text: "当前草稿", first: false, recent: recentInterviewRecords });

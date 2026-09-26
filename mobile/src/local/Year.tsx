@@ -6,6 +6,7 @@ import { now } from "./services";
 import {
   monthKey,
   recordsOfPerson,
+  clipText,
   recordTitle,
   sortedRecords,
   yearKey,
@@ -90,7 +91,7 @@ function YearNote({ year }: { year: string }) {
           );
           if (typeof result.text !== "string" || !result.text.trim())
             throw new Error("AI 草稿不完整，请重试。");
-          return result.text.trim().slice(0, 2000);
+          return clipText(result.text.trim(), 2000);
         },
       }}
     />

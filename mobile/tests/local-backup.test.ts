@@ -192,7 +192,7 @@ it("exports and restores real original bytes and relationships with a before-res
     model.deleteRecord(s, "r");
     s.profile.name = "changed";
   });
-  const before = await backup.restoreBackup(store, out);
+  const { prior: before } = await backup.restoreBackup(store, out);
   expect(store.get().records.r?.text).toBe("第一步");
   expect(store.get().albums.a?.items[0]?.recordId).toBe("r");
   expect(store.get().profile.name).toBe("宝宝");
@@ -673,6 +673,9 @@ it("creates, reuses and renames people within the stored name limits", async () 
   await expect(renamePerson(store, id, "   ")).rejects.toThrow();
   await expect(renamePerson(store, "nobody", "谁")).rejects.toThrow();
   expect(store.get().persons[id]!.name).toBe("长".repeat(50));
+  // 第 50 个单位落在表情中间：整个表情不要，不留半个字符。
+  await renamePerson(store, id, `${"长".repeat(49)}👶宝`);
+  expect(store.get().persons[id]!.name).toBe("长".repeat(49));
 });
 it("recovers an unreadable startup library into a verified new database and retains the original", async () => {
   const { store, backup } = await setup();
@@ -935,7 +938,7 @@ it("restoring the oldest retained backup does not prune it first", async () => {
   await store.change((s) => {
     model.deleteRecord(s, "r");
   });
-  const prior = await backup.restoreBackup(store, oldest);
+  const { prior } = await backup.restoreBackup(store, oldest);
   expect(store.get().records.r?.text).toBe("第一步");
   // 恢复完按常规只留三份：「恢复前」那份在，最旧的那份让位。
   const kept = backup.retainedBackups().map((f) => f.name);
@@ -1181,7 +1184,7 @@ it("a record written while the restore unpacks is backed up into the before-rest
   const { store, backup, model } = await setup();
   const out = await backup.createBackup(store.get());
   let queued: Promise<unknown> | null = null;
-  const before = await backup.restoreBackup(store, out, (stage) => {
+  const { prior: before } = await backup.restoreBackup(store, out, (stage) => {
     // 分享进来的一段：落在「恢复前」备份之后、替换之前。
     if (stage.includes("解包") && !queued)
       queued = store.change((s) => {
@@ -1442,12 +1445,13 @@ it("failed or stopped restores keep the other restore records and add none", asy
   for (const name of ["v1", "v2", "v3"]) {
     await store.change((s) => { s.profile.name = name; });
     await backup.createBackup(store.get());
-    // 备份文件名按时刻排序，隔一点免得同一毫秒。
+    // 保留备份按 meta 里的创建时刻排序，隔一点免得同一毫秒。
     await new Promise((done) => setTimeout(done, 5));
   }
   const names = () => backup.listLocalBackups().map((b) => b.file.name).sort();
   const retained = names();
   expect(retained).toHaveLength(3);
+  const oldest = backup.retainedBackups().at(-1)!.name;
   await store.change((s) => { s.profile.name = "now"; });
   const target = backup.listLocalBackups().find((b) => b.file.name === retained[2])!.file;
   env.database!.exec(
@@ -1466,10 +1470,10 @@ it("failed or stopped restores keep the other restore records and add none", asy
   await backup.restoreBackup(store, target);
   const after = names();
   expect(after).toHaveLength(3);
-  expect(after).not.toContain(retained[0]);
+  expect(after).not.toContain(oldest);
 });
-it("keeps the pre-restore copy when the switch landed but a listener then threw", async () => {
-  const { store, backup } = await setup();
+it("切换已落库后界面监听抛错：恢复照样算成功，恢复出的照片文件都在，「恢复前」那份留着", async () => {
+  const { store, backup, files } = await setup();
   const out = await backup.createBackup(store.get());
   await store.change((s) => { s.profile.name = "恢复前的名字"; });
   const before = backup.listLocalBackups().length;
@@ -1477,15 +1481,80 @@ it("keeps the pre-restore copy when the switch landed but a listener then threw"
   const unsubscribe = store.subscribe(() => {
     if (armed) { armed = false; throw new Error("listener blew up"); }
   });
-  await expect(backup.restoreBackup(store, out, (stage) => {
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  await backup.restoreBackup(store, out, (stage) => {
     if (stage.includes("写入本机资料")) armed = true;
-  })).rejects.toThrow("listener blew up");
+  });
   unsubscribe();
-  // 库已经换成备份那份：「恢复前」是现在唯一留着旧内容的地方，不能删。
-  expect(store.get().profile.name).not.toBe("恢复前的名字");
+  expect(armed).toBe(false);
+  expect(error).toHaveBeenCalled();
+  // 以前 change 在这里失败，恢复的出错分支把库里正引用着的恢复出的照片删掉了。
+  expect(store.get().profile.name).toBe("宝宝");
+  for (const m of Object.values(store.get().media))
+    expect(files.mediaFile(m).exists).toBe(true);
+  expect(readLibrary(env.database!)).toEqual(store.get());
   const kept = backup.listLocalBackups();
   expect(kept.length).toBe(before + 1);
   const names = [];
   for (const r of kept) names.push((await backup.inspectBackup(r.file)).profile.name);
   expect(names).toContain("恢复前的名字");
+});
+it.each(["缺失", "损坏"])("现在的一张照片原件%s也能恢复一份好备份：「恢复前」那份跳过它、照常能恢复，并报告跳过几个", async (how) => {
+  const { store, backup, files, model, media } = await setup();
+  const good = await backup.createBackup(store.get());
+  const src = path.join(env.root, "later.jpg");
+  fs.writeFileSync(src, Buffer.alloc(5000, 9));
+  const later = await files.preserveMedia(src, "later.jpg", "image");
+  const at = new Date().toISOString();
+  await store.change((s) => {
+    s.media[later.id] = later;
+    s.drafts.d2 = {
+      id: "d2", recordId: null, baseRevision: 0, updatedAt: at,
+      content: { ...model.emptyContent(), text: "后来", mediaIds: [media.id, later.id], coverId: later.id },
+    };
+    model.saveRecord(s, "d2", "r2", at);
+    s.profile.avatarId = later.id;
+    s.albums.b = { id: "b", name: "后来", items: [{ id: "j", recordId: "r2" }], coverId: later.id, updatedAt: at };
+    s.series.v = { id: "v", name: "每月", items: [{ recordId: "r2", mediaId: later.id, month: "2026-09" }], updatedAt: at };
+  });
+  const lost = files.mediaFile(later).uri;
+  if (how === "缺失") fs.unlinkSync(lost);
+  else fs.writeFileSync(lost, Buffer.alloc(5000, 1));
+  // 自己点的备份照常失败：存到应用之外的备份悄悄少了照片，比备份失败更糟。
+  await expect(backup.createBackup(store.get())).rejects.toThrow("素材缺失或损坏");
+  const { prior, skipped } = await backup.restoreBackup(store, good);
+  expect(skipped).toBe(1);
+  expect(store.get().records.r2).toBeUndefined();
+  expect(store.get().media[later.id]).toBeUndefined();
+  expect(files.mediaFile(store.get().media[media.id]!).exists).toBe(true);
+  // 「恢复前」那份：别的都在，只少了那张照片和指向它的引用。
+  const inside = await backup.inspectBackup(prior);
+  expect(inside.media[later.id]).toBeUndefined();
+  expect(inside.records.r2).toMatchObject({ text: "后来", mediaIds: [media.id], coverId: null });
+  expect(inside.albums.b?.coverId).toBeNull();
+  expect(inside.series.v?.items).toEqual([]);
+  expect(inside.profile.avatarId).toBeNull();
+  // 它照常能恢复回来。
+  await backup.restoreBackup(store, prior);
+  expect(store.get().records.r2?.text).toBe("后来");
+  expect(fs.readFileSync(files.mediaFile(store.get().media[media.id]!).uri)).toEqual(Buffer.alloc(600000, 17));
+});
+it("往西飞、夏令时回拨后，保留与排序看备份里的 UTC 创建时刻，不看名字里的本地时间", async () => {
+  const { store, backup } = await setup();
+  const made: string[] = [];
+  for (let i = 0; i < 3; i++) {
+    made.push((await backup.createBackup(store.get())).uri);
+    await new Promise((done) => setTimeout(done, 5));
+  }
+  // 真实先后 A、B、C：A、B 在东八区写下，往西飞之后写 C——C 名字里的本地时间反而最早。
+  const stamps = ["20990101-0900", "20990101-1000", "20000101-0000"];
+  const renamed = made.map((uri, i) => {
+    const to = path.join(path.dirname(uri), path.basename(uri).replace(/-\d{8}-\d{4}-/, `-${stamps[i]}-`));
+    fs.renameSync(uri, to);
+    return path.basename(to);
+  });
+  await new Promise((done) => setTimeout(done, 5));
+  const d = await backup.createBackup(store.get());
+  // 最新的三份是 D、C、B：按名字会留下 A、B 而删掉 C。列表与启动救援也要以最新的打头。
+  expect(backup.retainedBackups().map((f) => f.name)).toEqual([d.name, renamed[2], renamed[1]]);
 });
