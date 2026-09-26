@@ -41,6 +41,7 @@ import {
   submitRecovery,
   type PreparedRecovery,
   requestToJoin,
+  awaitingConfirm,
   upgradeFamily,
   type Inspected,
   type JoinRequest,
@@ -199,7 +200,8 @@ export function FamilyScreen({ navigation }: Props<"Family">) {
       timer: ReturnType<typeof setTimeout> | undefined;
     const tick = async () => {
       if (stopped) return;
-      if (Date.parse(join.expiresAt) <= Date.now()) {
+      // 钥匙和令牌已经存好、只差确认（确认的回应丢了）：过了二维码的时限也要再确认一次，不能当作过期丢下。
+      if (Date.parse(join.expiresAt) <= Date.now() && !awaitingConfirm(join)) {
         openJoin.current = null;
         setError("二维码过期了，请重新出示。");
         setStep({ kind: "join" });
@@ -312,6 +314,8 @@ export function FamilyScreen({ navigation }: Props<"Family">) {
                   "LAST_ADMIN_DEVICE",
                   "这是家里最后一台管理者手机。先给自己或另一位家人加一台管理者手机，再退出。",
                 );
+              // 被拒时要马上把清单发回去（见 republish）：本机正在备份、恢复或清理时先别退。
+              if (isLocalBusy()) throw new Error("本机正在备份或恢复，等它完成再试。");
               if (!claimSync()) throw new Error("正在同步，等它完成再试。");
               try {
                 await leaveFamily({

@@ -276,17 +276,17 @@ it("一起写的手机恢复失败、库没换：合并之基与已读清单原�
   expect(syncState.forgetMergeHistory).toHaveBeenCalledOnce();
   expect({ seen: env.remote?.seen, base: env.base }).toEqual({ seen: { d2: "sha-d2" }, base: HISTORY });
 });
-it("一起写的手机恢复：库已换掉才报错，合并历史不放回", async () => {
+it("一起写的手机恢复途中本机又写过、最后没换成：合并历史照样放回", async () => {
   env.remote = { seen: { d2: "sha-d2" } };
   env.base = HISTORY;
   await pickFromFiles();
   restoreBackup.mockImplementationOnce(async () => {
-    env.lib = { restored: true };
-    throw new Error("收拾时出错");
+    // 分享进来一张照片、编辑页落了盘：库变了，但恢复报错就是没换成（换库是最后一步）。
+    env.lib = { ...(env.lib as object), shared: true };
+    throw new Error("恢复期间本机一直在写入新内容，已停下，现在的内容没有被替换；请稍后再恢复一次。");
   });
   await confirmRestore();
-  expect(env.slots[ERROR]).toBe("收拾时出错");
-  expect({ seen: env.remote?.seen, base: env.base }).toEqual({ seen: {}, base: { version: 1, merged: {}, known: {} } });
+  expect({ seen: env.remote?.seen, base: env.base }).toEqual({ seen: { d2: "sha-d2" }, base: HISTORY });
 });
 
 // #19 已加入家庭时恢复旧备份的确认框没说下次同步会并回之后的改动

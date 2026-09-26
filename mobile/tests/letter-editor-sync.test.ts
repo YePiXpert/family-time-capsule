@@ -4,6 +4,7 @@ import { emptyLibrary, type Library, type LocalLetter } from "../src/local/model
 import { contentHashOf, lineage } from "../src/local/hash";
 import { emptyBase, fingerprintOf, mergeLibraries } from "../src/sync/merge";
 import { usePreventRemove } from "@react-navigation/native";
+import { Alert } from "react-native";
 import { LetterEditor } from "../src/local/LetterEditor";
 
 // 写信页开着时同步改了这封信：不悄悄盖掉家里的改动，也不把人困在页上。
@@ -214,4 +215,71 @@ it("这封信在别的手机被封存、这边接着写了：封好的那封不�
   expect(env.lib.letters["rescued-1"]!.text).toBe("亲爱的桉桉：今天你学会了走路。");
   await back();
   expect(env.dispatch).toHaveBeenCalledOnce();
+});
+
+it("录音途中并进爸爸的改动、随后放弃录音：不拿旧字盖回去，录音一结束就换成爸爸那版", async () => {
+  env.lib.letters.L = v1;
+  render();
+  // 正在录音：编辑页手里这份带着录音文件名（start() 落在 ref 里）。
+  const ref = env.slots.find(
+    (s) => !!s && typeof s === "object" && "current" in (s as object) &&
+      !!(s as { current?: { letter?: unknown } }).current?.letter,
+  ) as { current: { letter: LocalLetter; recordingFile?: string } };
+  ref.current = { ...ref.current, recordingFile: "rec.m4a" };
+  env.lib.letters.L = fromDad; // 录音途中自动同步快进
+  render();
+  expect(ref.current.letter.text).toBe(v1.text); // 录音中先不换
+  const onRemove = vi.mocked(usePreventRemove).mock.calls.at(-1)![1] as (e: { data: { action: unknown } }) => void;
+  onRemove({ data: { action: { type: "GO_BACK" } } });
+  const buttons = vi.mocked(Alert.alert).mock.calls.at(-1)![2] as { text: string; onPress?: () => void }[];
+  buttons.find((b) => b.text === "放弃录音")!.onPress!();
+  await new Promise((done) => setTimeout(done, 30));
+  expect(env.lib.letters.L).toBe(fromDad);
+  // 录音一结束（放弃也算）就换成爸爸那版：之后再写也是接着它写。
+  expect(ref.current.letter.text).toBe(fromDad.text);
+  render();
+  expect(env.dispatch).toHaveBeenCalledOnce();
+});
+
+it("这边清空了信、别的手机把它封存了：按返回只是退出，不替全家删掉封好的信", async () => {
+  env.lib.letters.L = v1;
+  render();
+  type("");
+  textInputs().find((n) => n.props.testID === "letter-title")!.props.onChangeText!("");
+  await debounce();
+  const sealed = { ...v1, sealed: true, updatedAt: "2026-09-26T09:00:00.000Z", ancestors: lineage(v1) };
+  env.lib.letters.L = sealed;
+  render();
+  await back();
+  expect(env.lib.letters.L).toBe(sealed);
+  expect(env.lib.tombstones?.["letters:L"]).toBeUndefined();
+  expect(env.dispatch).toHaveBeenCalledOnce();
+});
+
+it("这边清空了信、家里没动过：按返回照旧把这封空信静默删掉", async () => {
+  env.lib.letters.L = v1;
+  render();
+  type("");
+  textInputs().find((n) => n.props.testID === "letter-title")!.props.onChangeText!("");
+  await back();
+  expect(env.lib.letters.L).toBeUndefined();
+  expect(env.dispatch).toHaveBeenCalledOnce();
+});
+
+it("点「删除这封信」时它已在别的手机封存：不删，说明原因，字还在", async () => {
+  env.lib.letters.L = v1;
+  render();
+  type("亲爱的桉桉：今天你学会了走路。");
+  const sealed = { ...v1, sealed: true, updatedAt: "2026-09-26T09:00:00.000Z", ancestors: lineage(v1) };
+  env.lib.letters.L = sealed;
+  render();
+  const page = nodes(render()).find((n) => n.type === "Page")!.props as { right: { props: { onPress: () => void } } };
+  const del = page.right.props;
+  del.onPress();
+  const buttons = vi.mocked(Alert.alert).mock.calls.at(-1)![2] as { text: string; onPress?: () => void }[];
+  buttons.find((b) => b.text === "删除")!.onPress!();
+  await new Promise((done) => setTimeout(done, 30));
+  expect(env.lib.letters.L).toBe(sealed);
+  expect(nodes(render()).find((n) => n.type === "ErrorText")!.props as unknown).toMatchObject({ message: "这封信已在另一台手机上封存，不能再删。" });
+  expect(env.goBack).not.toHaveBeenCalled();
 });

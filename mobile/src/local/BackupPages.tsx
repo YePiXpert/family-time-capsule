@@ -312,7 +312,6 @@ function useBackupActions() {
               let skipped = 0;
               // 一起写的手机：换库之前先忘掉合并历史，下一轮把全家的清单重读一遍，把备份之后家人的改动并回来。
               // 换完才忘的话，中间被杀掉就留着旧的基与已读清单，备份之后的记录一直回不来。
-              const before = store.get();
               const history = await saveMergeHistory();
               await forgetMergeHistory();
               try {
@@ -324,8 +323,9 @@ function useBackupActions() {
                   conflictMediaIds(await readConflicts()),
                 ));
               } catch (e) {
-                // 没换成、本机库原样：合并历史原样放回。没有基的那一轮是整个重并，本机还没发出去的资料改动可能输给家人的旧值。
-                if (store.get() === before) await putBackMergeHistory(history);
+                // 恢复报错就是没换成（换库是最后一步，之后的收拾都不外抛）：合并历史原样放回，
+                // 哪怕恢复途中本机又写过。没有基的那一轮是整个重并，本机还没发出去的资料改动可能输给家人的旧值。
+                await putBackMergeHistory(history);
                 throw e;
               } finally {
                 discardPickedCopies(files);
