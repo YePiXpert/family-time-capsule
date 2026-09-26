@@ -6,6 +6,7 @@ import {
   freezeChanged,
   freezeLibrary,
   normalizeLibrary,
+  stampChanges,
   validateChange,
   validateLibrary,
   type Library,
@@ -31,6 +32,11 @@ function notify(fn: () => void): void {
     console.error("本机资料已保存，但通知界面时出错：", e);
   }
 }
+/**
+ * versioned：这次改动自己写好了根值与人物的版本时刻（合并、恢复）。缺省由 change 在值变了时盖上
+ * 「现在」（至少晚于上一版一毫秒），界面上的每处改动都不用操心。
+ */
+export type ChangeOptions = { versioned?: boolean };
 /** All mutations, including restore, use one queue. A failed write never advances UI state. */
 export class LocalStore {
   private state: Library = emptyLibrary();
@@ -55,7 +61,10 @@ export class LocalStore {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
   };
-  change = <T>(apply: (next: Library) => T | Promise<T>): Promise<T> => {
+  change = <T>(
+    apply: (next: Library) => T | Promise<T>,
+    options: ChangeOptions = {},
+  ): Promise<T> => {
     const next = this.queue.then(async () => {
       const started = Date.now();
       // 工作副本与当前状态共享实体对象，所以实体只能整个替换（editEntity），
@@ -80,6 +89,7 @@ export class LocalStore {
         "yearPicks",
         "yearBooksBoundAt",
         "tombstones",
+        "rootStamps",
       ] as const) {
         const before = this.state[field],
           after = state[field];
@@ -95,6 +105,9 @@ export class LocalStore {
           ) (state as Record<string, unknown>)[field] = before;
         }
       }
+      // 值变了、时刻没人写：盖上新时刻。改回见过的值也是一次新改动，家人才跟得上。
+      if (!options.versioned)
+        stampChanges(this.state, state, delta, new Date().toISOString());
       validateChange(state, delta);
       try {
         await this.disk.write(state, delta);

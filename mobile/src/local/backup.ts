@@ -407,6 +407,7 @@ function withoutMedia(state: Library, gone: ReadonlySet<string>): Library {
       : c;
   const cover = <T extends { coverId: string | null }>(v: T): T =>
     v.coverId && ids.has(v.coverId) ? { ...v, coverId: null } : v;
+  const dropAvatar = !!state.profile.avatarId && ids.has(state.profile.avatarId);
   return {
     ...state,
     media: Object.fromEntries(
@@ -425,10 +426,15 @@ function withoutMedia(state: Library, gone: ReadonlySet<string>): Library {
         ? { ...v, items: v.items.filter((i) => !ids.has(i.mediaId)) }
         : v,
     ),
-    profile:
-      state.profile.avatarId && ids.has(state.profile.avatarId)
-        ? { ...state.profile, avatarId: null }
-        : state.profile,
+    profile: dropAvatar ? { ...state.profile, avatarId: null } : state.profile,
+    // 头像是缺了原件才拿掉的，不是谁清空的：去掉它的时刻，恢复后听家里那一版。
+    ...(dropAvatar && state.rootStamps?.["profile:avatarId"]
+      ? {
+          rootStamps: Object.fromEntries(
+            Object.entries(state.rootStamps).filter(([id]) => id !== "profile:avatarId"),
+          ),
+        }
+      : {}),
   };
 }
 /** 清旧份 + 回收 blob；失败吞掉——备份或恢复本身已经完成，下次再收拾。 */
@@ -991,7 +997,8 @@ export async function restoreBackup(
             if (!Object.hasOwn(next, key))
               delete (current as Partial<Record<string, unknown>>)[key];
           Object.assign(current, next, { media: { ...next.media, ...kept } });
-        });
+          // 版本时刻原样随备份：没有时刻的旧备份，值就比家里任何带时刻的都旧，下次同步听家里的。
+        }, { versioned: true });
         break;
       } catch (e) {
         if (!(e instanceof ChangedDuringRestore)) throw e;

@@ -248,7 +248,8 @@ async function syncFamily(
     pins.push(pinManifest(read.manifest.bytes, read.manifest.index.sha256));
   }
   const now = new Date().toISOString();
-  let merged = mergeLibraries(store.get(), snapshots, base, now);
+  const joining = state.joining === true;
+  let merged = mergeLibraries(store.get(), snapshots, base, now, { joining });
   // 一张照片在远端缺了或对不上：带着它的那几台这一轮不并，合并重来；每次至少少一台，必然收敛。
   for (;;) {
     const blobs = new Map(
@@ -283,7 +284,7 @@ async function syncFamily(
     );
     for (const r of carriers) unread.set(r.deviceId, cause);
     snapshots = snapshots.filter((r) => !carriers.includes(r));
-    merged = mergeLibraries(store.get(), snapshots, base, now);
+    merged = mergeLibraries(store.get(), snapshots, base, now, { joining });
   }
   // 上传会整份换掉本机自己的清单、删掉本成员旧版迁来的那份：它们读不了（比如清过同步状态后）就不能跳过，
   // 否则没并进来的历史连同它引用的对象会被回收。认不出本机时也照原样报错。
@@ -312,7 +313,7 @@ async function syncFamily(
     const earlier = await readConflicts();
     await store.change((current) => {
       throwIfAborted(deps.signal);
-      merged = mergeLibraries(current, snapshots, base, now);
+      merged = mergeLibraries(current, snapshots, base, now, { joining });
       for (const m of merged.wantedMedia) {
         const ready = prepared.get(m.id);
         if (!ready || ready.sha256 !== m.sha256 || ready.bytes !== m.bytes)
@@ -322,7 +323,8 @@ async function syncFamily(
       // 输的一版先落盘再换库：写不进去就不换，本机那一版原样留着；换库失败只多一张重复的卡。
       if (merged.conflicts.length) writeConflicts(combineConflicts(earlier, merged.conflicts));
       Object.assign(current, merged.next);
-    });
+      if (!merged.next.rootStamps) delete current.rootStamps;
+    }, { versioned: true });
   } catch (e) {
     for (const file of created) if (file.exists) file.delete();
     throw e;
@@ -341,8 +343,11 @@ async function syncFamily(
   // 合并已落进本机库：基和已读清单也要跟上。否则上传失败后下一轮拿旧基再合一遍，
   // 本机改过的拉取内容会被当成两边都改而出假冲突卡，那几份清单也要重下。
   writeBase(merged.base);
+  // 头一回加入的那一轮合并已经落进本机库：此后按平常合并（本机的改动带时刻，照常传开）。
+  const settled: RemoteState = { ...state };
+  delete settled.joining;
   writeRemoteState({
-    ...state,
+    ...settled,
     autoSync: (await readRemoteState())?.autoSync ?? state.autoSync,
     seen: { ...seen },
   });
@@ -377,7 +382,7 @@ async function syncFamily(
   const deviceId = current;
   if (deviceId && pushed) seen[deviceId] = pushed.index.sha256;
   const result: RemoteState = {
-    ...state,
+    ...settled,
     // 同步期间外观页可能关掉自动同步，不能用开始时的快照覆盖她的选择。
     autoSync: (await readRemoteState())?.autoSync ?? state.autoSync,
     enabled: true,
@@ -435,8 +440,14 @@ export async function joinFamily(
   throwIfAborted(deps.signal);
   const previous = await readRemoteState();
   await storeKey(key);
-  if (previous?.keyId !== keyId) clearSyncFiles();
-  writeRemoteState(freshRemoteState(keyId));
+  // 新钥匙：这台手机头一回并入这个家，家里已有的根值听家里的（见 RemoteState.joining）。
+  // 同一把钥匙再加入一次（上次头一轮没成功就重试）也保留这个标记。
+  const fresh = previous?.keyId !== keyId;
+  if (fresh) clearSyncFiles();
+  writeRemoteState({
+    ...freshRemoteState(keyId),
+    ...(fresh || previous?.joining ? { joining: true as const } : {}),
+  });
   return runFamilySync(store, { ...deps, key });
 }
 

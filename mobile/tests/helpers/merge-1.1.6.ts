@@ -1,14 +1,12 @@
-import { contentHashOf, hashOf, lineage } from "../local/hash";
+// 1.1.6（be98c2e）发布时的 mergeLibraries，逐字照抄，只改了导入路径，并把人物墓碑换回 1.1.6 的写法（删除时刻 = 现在）。
+// 混合家庭测试用：家里可能还有没升级的手机。不要改这份文件去迁就新代码。
+import { contentHashOf, hashOf, lineage } from "../../src/local/hash";
 import {
-  PROFILE_FIELDS,
-  ROOT_STAMP_KEY,
   TOMBSTONE_KINDS,
-  deletePerson,
+  deletePerson as deletePersonNow,
   editEntity,
   forkLibrary,
-  mergePersons,
-  nextStamp,
-  rootValue,
+  mergePersons as mergePersonsNow,
   type Library,
   type LocalAlbum,
   type LocalLetter,
@@ -16,11 +14,19 @@ import {
   type LocalPerson,
   type LocalRecord,
   type LocalSeries,
-  type ProfileField,
   type Stored,
   type TombstoneKind,
-} from "../local/model";
-export { canonical, contentHashOf, hashOf } from "../local/hash";
+} from "../../src/local/model";
+export { canonical, contentHashOf, hashOf } from "../../src/local/hash";
+/** 1.1.6 的人物墓碑就是删除时刻（那时人物没有 updatedAt）。 */
+function deletePerson(s: Library, id: string, now: string): void {
+  deletePersonNow(s, id, now);
+  s.tombstones = { ...s.tombstones, [`persons:${id}`]: now };
+}
+function mergePersons(s: Library, source: string, target: string, now: string): void {
+  mergePersonsNow(s, source, target, now);
+  s.tombstones = { ...s.tombstones, [`persons:${source}`]: now };
+}
 /**
  * 家人一起写的合并：纯函数，不碰磁盘不碰网络。输入本机库、别人的清单（整库快照）与上次同步之基，
  * 输出合并后的库、新记的冲突、要去下载的素材与新的基。任何一步都不改传入的对象。
@@ -29,17 +35,10 @@ export { canonical, contentHashOf, hashOf } from "../local/hash";
  * - merged：上次同步结束时本机每个实体的指纹。本机指纹 = 它 → 本机这一段没动过。
  * - known：本机已经处理过的其他版本（曾持有、曾判输、曾判过时）。别人的清单是整库快照，
  *   输掉的旧版会一直躺在里面，认得它们才不会把删掉、改掉的东西送回来，也不会反复出同一张冲突卡。
- * 规则：远端版本与本机相同、与基相同或已认得 → 不看；世系先说话：远端接着本机改的 → 取远端（哪怕时钟慢），
- * 远端早在本机世系里 → 不动。其余：本机没动 → 取远端（远端比本机还旧的除外：
+ * 规则：远端版本与本机相同、与基相同或已认得 → 不看；本机没动 → 取远端（远端比本机还旧的除外：
  * 留本机、出冲突卡；远端有世系但不源自本机版时，本机输掉的一版也留底）；两边都动 → 按 updatedAt 新者胜、同秒比内容哈希，输的一版留底；内容相同不算冲突。
  * 墓碑：删除时刻晚于实体 updatedAt → 删（本机改过又被删也留底）；实体在墓碑之后改过 → 改者胜。
  * 相册／系列两边都动：名字随赢家，条目取并集（赢家在前）；人物同名自动并成一个（id 小的留下）。
- * 人物的 updatedAt 是改名时刻（LocalStore.change 盖）：没有的（1.1.6 建的、升级前的）比有的旧；并进来的一版
- * 不比本机新却换了名字（1.1.6 改名不动 updatedAt）就盖上新时刻。
- * 根值带版本（rootStamps：资料各字段、每年的寄语与封面各一个改动时刻），见 mergeVersionedRoot：带时刻的按
- * （时刻，内容指纹）全序取最新，改回见过的值、清空都传得开，旧快照传不开，谁也不来回翻；同时写的寄语照旧接起来。
- * 没有时刻的（1.1.6 手机、升级前）按原来的规则并，并进来就盖上时刻。选片（yearPicks）自带 updatedAt，照旧。
- * base.merged 仍只记值的指纹，旧的 base.json 照样能用。头一回加入（options.joining）见 MergeOptions、joinRoot。
  * 素材按 id 取并集、本机已有的永不被覆盖，只带回合并后共享实体引用到的那些。
  */
 export type RemoteSnapshot = {
@@ -97,38 +96,10 @@ type SharedKind = TombstoneKind;
 type Shared = { id: string; updatedAt?: string; ancestors?: readonly string[] };
 /** 未带世系的旧版本无法判断因果关系；升级期不据此出卡。 */
 function descendsFrom(candidate: Shared, local: Shared): boolean | undefined {
-  const line = candidate.ancestors;
-  if (!Array.isArray(line)) return undefined;
-  const hash = contentHashOf(local).slice(0, 16);
-  if (!line.includes(hash)) return false;
-  // local 是改回去的一版（取消了「第一次」，内容等于它自己的某个祖先）：同一枚哈希分不清指的是它还是它的祖先。
-  // 这时要整条接得上——candidate 在那一位之后的世系正是 local 的世系（lineage 同样截到八枚）。
-  const own = local.ancestors ?? [];
-  if (!own.includes(hash)) return true;
-  return line.some((h, i) => {
-    if (h !== hash) return false;
-    const tail = line.slice(i + 1),
-      expected = own.slice(0, 7 - i);
-    return tail.length === expected.length && tail.every((x, j) => x === expected[j]);
-  });
+  if (!Array.isArray(candidate.ancestors)) return undefined;
+  return candidate.ancestors.includes(contentHashOf(local).slice(0, 16));
 }
 type Version = { fp: string; entity: Shared; device: string | null };
-/**
- * 远端版对本机版的因果：descendant = 远端接着本机改的（后代永远不过时：时钟慢的手机接着改的一版、
- * 改回去的一版都照收）；ancestor = 远端早已包含在本机里；concurrent = 两边都有世系、互不相干；unknown = 旧版本没有世系。
- * 世系截到八枚又改回去过时，两边可能互相认得：按新者胜。
- */
-function relationOf(
-  remote: Version,
-  local: Version,
-): "descendant" | "ancestor" | "concurrent" | "unknown" {
-  const down = descendsFrom(remote.entity, local.entity),
-    up = descendsFrom(local.entity, remote.entity);
-  if (down && up) return newest(remote, local) < 0 ? "descendant" : "ancestor";
-  if (down) return "descendant";
-  if (up) return "ancestor";
-  return down === false ? "concurrent" : "unknown";
-}
 /** JSON 值逐项相等（键序不论）。说「不等」可能是假的（undefined 键、NaN），说「相等」一定真。 */
 function equalValue(a: unknown, b: unknown): boolean {
   if (a === b) return true;
@@ -167,24 +138,19 @@ export function fingerprintOf(entity: Shared): string {
 const hashPart = (fp: string) => fp.slice(fp.indexOf("|") + 1);
 const timeOf = (e: Shared) =>
   e.updatedAt === undefined ? NaN : Date.parse(e.updatedAt);
-/**
- * 新者在前：先比 updatedAt，再比内容哈希——两台手机对同两版算出同一个赢家。没有 updatedAt 的
- * （1.1.6 手机建的人物、升级前的旧人物）比有的旧：这样才是全序，几台手机对同一堆版本排出同一个最新。
- */
+/** 新者在前：先比 updatedAt，再比内容哈希——两台手机对同两版算出同一个赢家。 */
 function newest(a: Version, b: Version): number {
   const ta = timeOf(a.entity),
     tb = timeOf(b.entity);
   if (Number.isFinite(ta) && Number.isFinite(tb) && ta !== tb) return tb - ta;
-  if (Number.isFinite(ta) !== Number.isFinite(tb)) return Number.isFinite(ta) ? -1 : 1;
   return hashPart(b.fp).localeCompare(hashPart(a.fp));
 }
-/** a 比 b 旧：时刻更早，或 a 没有时刻而 b 有（只有人物会缺）。 */
 const isOlder = (a: Shared, b: Shared) => {
   const ta = timeOf(a),
     tb = timeOf(b);
-  return Number.isFinite(tb) && (Number.isFinite(ta) ? ta < tb : true);
+  return Number.isFinite(ta) && Number.isFinite(tb) && ta < tb;
 };
-/** 墓碑压得住这一版吗：删除时刻晚于它的 updatedAt；没有 updatedAt 的（旧人物）一律压得住。 */
+/** 墓碑压得住这一版吗：删除时刻晚于它的 updatedAt；没有 updatedAt 的（人物）一律压得住。 */
 const deadBy = (deletedAt: string | undefined, e: Shared) =>
   deletedAt !== undefined &&
   (e.updatedAt === undefined || Date.parse(deletedAt) > timeOf(e));
@@ -243,6 +209,9 @@ function removePerson(s: Library, id: string, deletedAt: string): void {
   else deletePerson(s, id, deletedAt);
 }
 type RootId = string;
+/** 资料按字段各一块：一台改名字、另一台改生日，两边都留下。 */
+const PROFILE_FIELDS = ["name", "fullName", "motto", "birthday", "avatarId"] as const;
+type ProfileField = (typeof PROFILE_FIELDS)[number];
 /** 根字段拆成小块各自合并：资料按字段一块，年度寄语／年度封面按年一块。 */
 /** 发给家人的库根（宝宝资料、年度寄语、封面、选片），键排好；本机设置等不在其中。 */
 export function sharedRootOf(lib: Library): Record<string, unknown> {
@@ -255,6 +224,12 @@ function rootIds(lib: Library): RootId[] {
     ...Object.keys(lib.yearCovers).map((y) => `yearCovers:${y}`),
     ...Object.keys(lib.yearPicks ?? {}).map((y) => `yearPicks:${y}`),
   ];
+}
+function rootValue(lib: Library, id: RootId): unknown {
+  if (id.startsWith("profile:"))
+    return lib.profile[id.slice(8) as ProfileField];
+  const [field, year] = id.split(":") as ["yearNotes" | "yearCovers" | "yearPicks", string];
+  return lib[field]?.[year];
 }
 function setRoot(lib: Library, id: RootId, value: unknown): void {
   if (id.startsWith("profile:")) {
@@ -433,193 +408,12 @@ function referencedShared(s: Library): Set<string> {
     ...Object.values(s.letters).flatMap((l) => l.mediaIds),
   ]);
 }
-type RootVersion = { value: unknown; fp: string; at?: string };
-/** 这一块根值的时刻；读不出的当作没有（清单都校验过，这里只是不让一枚坏时刻排到最前）。 */
-const stampOf = (lib: Library, id: RootId): string | undefined => {
-  const at = lib.rootStamps?.[id];
-  return typeof at === "string" && Number.isFinite(Date.parse(at)) ? at : undefined;
-};
-const stampTime = (v: RootVersion) =>
-  v.at === undefined ? -Infinity : Date.parse(v.at);
-/**
- * 带版本的根值新者在前：先比时刻（没有时刻的最旧），同一时刻比内容指纹。这是全序——
- * 每台手机对同一堆版本排出同一个最新，谁也不会来回翻。
- */
-function newerRoot(a: RootVersion, b: RootVersion): number {
-  const ta = stampTime(a),
-    tb = stampTime(b);
-  if (ta !== tb) return tb > ta ? 1 : -1;
-  return a.fp === b.fp ? 0 : b.fp > a.fp ? 1 : -1;
-}
-const latestStamp = (versions: readonly RootVersion[]) =>
-  versions.reduce<string | undefined>(
-    (max, v) =>
-      v.at !== undefined && (max === undefined || Date.parse(v.at) > Date.parse(max))
-        ? v.at
-        : max,
-    undefined,
-  );
-/** 几段寄语按给定顺序接起来（赢家在前）；空的不算一段。都空就是第一版的值。 */
-function joinVersions(versions: readonly RootVersion[]): unknown {
-  let joined: string | undefined;
-  for (const v of versions)
-    if (typeof v.value === "string" && v.value !== "")
-      joined = joined === undefined ? v.value : joinNotes(joined, v.value);
-  return joined ?? versions[0]!.value;
-}
-/**
- * 一块带版本的根值（资料字段、某年寄语、某年封面）怎么并。version 为 undefined 表示本机不动；
- * seen 是这一轮看过的其他版本，记进 known。
- * - 带时刻的远端版本比本机新（全序 newerRoot）：取最新的。本机这一段也改过的年度寄语照旧接上，
- *   接好的一段时刻晚于参与的每一版，全家收敛到它。不看 known：改回去的值有新时刻，照样传开；
- *   旧快照时刻旧，自然不取。本机没有时刻（旧数据、恢复的旧备份）比任何带时刻的都旧。
- * - 没有更新的带时刻版本：没时刻的远端版本（1.1.6 手机、升级前的数据）按原来的规则
- *   （认得的不看，内容哈希定序，寄语接上）；并进来就盖上时刻，从此进入有版本的世界。
- *   没有基（恢复后、忘了合并历史；不是「这一项还没进过基」）时，本机或远端只要有带时刻的一版就不听没时刻的——分不清是新改动
- *   还是旧手机的旧快照，按「没有时刻的最旧」处理。
- */
-function mergeVersionedRoot(
-  id: RootId,
-  local: Library,
-  ordered: readonly RemoteSnapshot[],
-  M: string | undefined,
-  knownHere: ReadonlySet<string>,
-  now: string,
-  hasBase: boolean,
-): { version?: RootVersion; seen: string[] } {
-  const note = id.startsWith("yearNotes:");
-  const localValue = rootValue(local, id);
-  const mine: RootVersion = {
-    value: localValue,
-    fp: rootFp(localValue),
-    at: stampOf(local, id),
-  };
-  const stamped: RootVersion[] = [],
-    plain: RootVersion[] = [];
-  for (const r of ordered) {
-    const value = rootValue(r.library, id),
-      fp = rootFp(value),
-      at = stampOf(r.library, id);
-    if (at !== undefined) {
-      if (!stamped.some((c) => c.fp === fp && c.at === at)) stamped.push({ value, fp, at });
-      continue;
-    }
-    if (fp === mine.fp || fp === M || knownHere.has(fp)) continue;
-    // 还没有基（头一回合并）时，空着的一项就是没填过，不算改动。
-    if (M === undefined && isBlank(value)) continue;
-    if (!plain.some((c) => c.fp === fp)) plain.push({ value, fp });
-  }
-  const seen = [...stamped, ...plain].map((c) => c.fp);
-  if (!hasBase && (stamped.length || mine.at !== undefined)) plain.length = 0;
-  const unseen = (c: RootVersion) => c.fp !== mine.fp && c.fp !== M && !knownHere.has(c.fp);
-  // 本机这一段改过：只在有基时才说得清；没有基时本机那一版只是某个旧版本。有基、这一项却是新的（今年头一回写寄语）：写了就算改过。
-  const changed = hasBase && mine.fp !== M && !(M === undefined && isBlank(localValue));
-  const newer = stamped.filter((c) => newerRoot(c, mine) < 0).sort(newerRoot);
-  const top = newer[0];
-  if (top) {
-    if (!note || !changed) return { version: top, seen };
-    // 两边都改了同一年的寄语：谁都不丢。
-    const parts = [top, ...[...stamped.filter((c) => c !== top && unseen(c)), ...plain].sort(newerRoot), mine];
-    const value = joinVersions(parts);
-    return {
-      version: rootFp(value) === top.fp ? top : { value, fp: rootFp(value), at: nextStamp(latestStamp(parts), now) },
-      seen,
-    };
-  }
-  const concurrent = note && changed ? stamped.filter(unseen) : [];
-  if (concurrent.length) {
-    // 没有更新的一版，但有本机没见过的并发改动（时刻更早）：接在本机这段后面。
-    const others = [...concurrent, ...plain].sort(newerRoot);
-    const parts = [mine, ...others];
-    const value = joinVersions(parts);
-    const fp = rootFp(value);
-    return fp === mine.fp ? { seen } : { version: { value, fp, at: nextStamp(latestStamp(parts), now) }, seen };
-  }
-  if (!plain.length) return { seen };
-  // 没有时刻的改动：原来的规则。本机没动（或初次加入时没填）不参加竞争，单边删除仍能传过来。
-  const candidates = [...plain];
-  if (mine.fp !== M && !(M === undefined && isBlank(localValue))) candidates.push(mine);
-  candidates.sort((a, b) => b.fp.localeCompare(a.fp));
-  // 与 1.1.6 逐字相同：内容哈希定序，寄语按同一顺序接上（排第一的是删除时就删）。
-  let value = candidates[0]!.value;
-  if (note && typeof value === "string") {
-    let joined = value;
-    for (const c of candidates.slice(1))
-      if (typeof c.value === "string") joined = joinNotes(joined, c.value);
-    value = joined;
-  }
-  const fp = rootFp(value);
-  if (fp === mine.fp) return { seen };
-  // 并进来的值盖上时刻，晚于本机那一版；没有基时说不清它新不新，不盖（任何带时刻的版本都能再改掉它）。
-  return {
-    version: { value, fp, at: hasBase ? nextStamp(mine.at, now) : undefined },
-    seen,
-  };
-}
-/**
- * 头一回加入时一块根值怎么并（资料字段、某年寄语、某年封面）：只要有一台家人的清单有这一项
- * （有值，或带时刻的清空），本机的就不参加——取家里带时刻里最新的；家里都没时刻（1.1.6、升级前）就按原来的规则
- * 在家里的几版里挑（内容哈希定序，寄语接上），不盖时刻。寄语例外：本机这一年也写了，就接在家里那段后面，时刻晚于两边。
- * 家里没有这一项：本机补上，连同它的时刻。
- */
-function joinRoot(
-  id: RootId,
-  local: Library,
-  ordered: readonly RemoteSnapshot[],
-  now: string,
-): { version?: RootVersion; seen: string[] } {
-  const family: RootVersion[] = [];
-  for (const r of ordered) {
-    const value = rootValue(r.library, id),
-      at = stampOf(r.library, id);
-    if (at === undefined && isBlank(value)) continue;
-    const fp = rootFp(value);
-    if (!family.some((c) => c.fp === fp && c.at === at)) family.push({ value, fp, at });
-  }
-  const seen = family.map((c) => c.fp);
-  if (!family.length) return { seen };
-  const stamped = family.filter((c) => c.at !== undefined).sort(newerRoot);
-  let chosen: RootVersion;
-  if (stamped.length) chosen = stamped[0]!;
-  else {
-    const plain = family.sort((a, b) => b.fp.localeCompare(a.fp));
-    let value = plain[0]!.value;
-    if (id.startsWith("yearNotes:") && typeof value === "string") {
-      let joined = value;
-      for (const c of plain.slice(1))
-        if (typeof c.value === "string") joined = joinNotes(joined, c.value);
-      value = joined;
-    }
-    // 家里几台（都没时刻）各执一版：加入的这台替全家定下一版，盖上时刻，新版手机都跟它；家里一致就不盖。
-    const fp = rootFp(value);
-    chosen = plain.length > 1 ? { value, fp, at: now } : { value, fp };
-  }
-  const mine = rootValue(local, id);
-  if (id.startsWith("yearNotes:") && typeof mine === "string" && mine !== "") {
-    const value = joinVersions([chosen, { value: mine, fp: rootFp(mine) }]);
-    const fp = rootFp(value);
-    if (fp !== chosen.fp)
-      return { version: { value, fp, at: nextStamp(latestStamp([chosen, { value: mine, fp, at: stampOf(local, id) }]), now) }, seen };
-  }
-  return { version: chosen, seen };
-}
-/**
- * joining：这台手机头一回并入这个家（新钥匙加入后第一轮成功合并之前，见 RemoteState.joining）。
- * 家里已经有的根值与人物听家里的：本机加入前在设置里填的名字、格言、选片，时刻再新也不盖掉家里的；
- * 家里没有的（没填过、也没清空过）由本机补上，带着本机的时刻传给全家。同一年的寄语两边都有时接起来，一个字不丢。
- * 家里还没有任何清单（建家的那台）时什么都不用让，本机的值照常发出去。
- */
-export type MergeOptions = { joining?: boolean };
 export function mergeLibraries(
   local: Library,
   remotes: readonly RemoteSnapshot[],
   base: SyncBase,
   now: string = new Date().toISOString(),
-  options: MergeOptions = {},
 ): MergeResult {
-  const joining = options.joining === true;
-  // 有没有合并历史（恢复、忘了合并历史、头一回加入时没有）；某一项不在基里只说明它是新的。
-  const hasBase = Object.keys(base.merged).length > 0;
   // 清单新的在前：同一实体的几份远端版本按新旧排，素材也先从新清单里找。
   const ordered = [...remotes].sort((a, b) =>
     b.createdAt.localeCompare(a.createdAt),
@@ -683,18 +477,6 @@ export function mergeLibraries(
             revision: (local?.revision ?? 0) + 1,
           } as Shared)
         : { ...entity };
-    // 人物：并进来的一版不比本机这版新（1.1.6 手机改名不动 updatedAt、没有 updatedAt 的旧人物）却换了名字，
-    // 就给它盖一个晚于本机这版的时刻，从此进入有版本的世界，丢了的手机上的旧名字压不回来。没有基时说不清，不盖。
-    if (
-      kind === "persons" &&
-      local &&
-      base.merged.persons?.[id] !== undefined &&
-      !(local.updatedAt === undefined
-        ? entity.updatedAt !== undefined
-        : timeOf(entity) > timeOf(local)) &&
-      contentHashOf(entity) !== contentHashOf(local)
-    )
-      adopted.updatedAt = nextStamp(local.updatedAt ?? entity.updatedAt, now);
     collection(next, kind)[id] = adopted;
     pulled++;
   };
@@ -749,42 +531,31 @@ export function mergeLibraries(
         adopt(kind, id, C.entity);
         continue;
       }
-      // 头一回加入：家里有这个人（同一个 id）就听家里的。
-      if (joining && kind === "persons") {
-        adopt(kind, id, C.entity);
-        continue;
-      }
-      const localVersion: Version = { fp: fpL!, entity: L, device: null };
       if (fpL === M) {
         // 本机没动：拿远端的——除非远端这一版比本机还旧（恢复了旧备份、或时钟不准），那就留本机、出卡。
-        // 远端接着本机这版改的：照收，时钟慢不算旧。远端这版在本机的世系里（丢了的手机、恢复前的旧清单）：早被本机包含，不出卡。
-        const relation = relationOf(C, localVersion);
-        if (relation === "descendant") {
-          adopt(kind, id, C.entity);
-          continue;
-        }
-        if (relation === "ancestor") continue;
+        // 远端这版在本机的世系里（丢了的手机、恢复前的旧清单）：早被本机包含，不出卡。
+        if (descendsFrom(L, C.entity) === true) continue;
         if (isOlder(C.entity, L)) conflict(kind, id, L, C.entity, C.device);
         else {
           // 已发布的本机版也可能输给并发编辑：对方有世系却不源自本机版时，本机也留底。
-          if (hashPart(fpL!) !== hashPart(C.fp) && relation === "concurrent")
+          if (hashPart(fpL!) !== hashPart(C.fp) && descendsFrom(C.entity, L) === false)
             conflict(kind, id, C.entity, L, null);
           adopt(kind, id, C.entity);
         }
         continue;
       }
       // 两边都动了。
+      const localVersion: Version = { fp: fpL!, entity: L, device: null };
       if (hashPart(fpL!) === hashPart(C.fp)) {
         if (!isOlder(C.entity, L)) adopt(kind, id, C.entity);
         continue;
       }
       // 一边的世系里有另一边（恢复了旧备份、重新加入后读到旧手机的清单）：旧的已包含在新的里，直接取新的，不出卡。
-      const relation = relationOf(C, localVersion);
-      if (relation === "descendant") {
+      if (descendsFrom(C.entity, L) === true) {
         adopt(kind, id, C.entity);
         continue;
       }
-      if (relation === "ancestor") continue;
+      if (descendsFrom(L, C.entity) === true) continue;
       const remoteWins = newest(C, localVersion) < 0;
       const winner = remoteWins ? C : localVersion,
         loser = remoteWins ? localVersion : C;
@@ -829,14 +600,9 @@ export function mergeLibraries(
     }
     pulled++;
   };
-  // 根值的版本：并进来的值带着它的时刻写进 next.rootStamps；清空、改回都是有时刻的改动。
-  const stamps: Record<string, string> = { ...(local.rootStamps ?? {}) };
   const rootKeys = new Set(rootIds(local));
-  for (const lib of [local, ...ordered.map((r) => r.library)]) {
-    if (lib !== local) for (const id of rootIds(lib)) rootKeys.add(id);
-    for (const id of Object.keys(lib.rootStamps ?? {}))
-      if (ROOT_STAMP_KEY.test(id)) rootKeys.add(id);
-  }
+  for (const r of ordered)
+    for (const id of rootIds(r.library)) rootKeys.add(id);
   for (const id of rootKeys) {
     const key = `root:${id}`;
     const localValue = rootValue(local, id);
@@ -844,29 +610,12 @@ export function mergeLibraries(
     const M = base.merged.root?.[id] ?? legacyProfileBase(id);
     const knownHere = new Set(base.known[key] ?? []);
     remember(key, M);
-    // 头一回加入：本机加入前填的值不是家里的历史，不记作「见过」——家里以后改成同一个值也要跟上。
-    if (!joining) remember(key, fpL);
-    if (!id.startsWith("yearPicks:")) {
-      const result = joining
-        ? joinRoot(id, local, ordered, now)
-        : mergeVersionedRoot(id, local, ordered, M, knownHere, now, hasBase);
-      for (const fp of result.seen) remember(key, fp);
-      if (!result.version) continue;
-      const { value, at } = result.version;
-      if (rootFp(value) !== fpL) {
-        setRoot(next, id, value);
-        countRoot(id);
-      }
-      if (at === undefined) delete stamps[id];
-      else stamps[id] = at;
-      continue;
-    }
-    // 年度册目录自带 updatedAt，照旧：按更新时间，再按内容哈希。头一回加入时家里有这一年的目录就只在家里的里面挑。
+    remember(key, fpL);
     const candidates: { fp: string; value: unknown }[] = [];
     for (const r of ordered) {
       const value = rootValue(r.library, id);
       const fp = rootFp(value);
-      if (!joining && (fp === fpL || fp === M || knownHere.has(fp))) continue;
+      if (fp === fpL || fp === M || knownHere.has(fp)) continue;
       // 还没有基（头一回合并）时，空着的一项就是没填过，不算改动。
       if (M === undefined && isBlank(value)) continue;
       if (candidates.some((c) => c.fp === fp)) continue;
@@ -876,24 +625,29 @@ export function mergeLibraries(
     for (const candidate of candidates) remember(key, candidate.fp);
     // 所有改过的版本一起比较：只拿第一台会把其他手机的改动记成「见过」却丢掉。
     // 本机没动（或初次加入时没填）不参加竞争，单边删除仍能传过来。
-    if (!joining && fpL !== M && !(M === undefined && isBlank(localValue)))
+    if (fpL !== M && !(M === undefined && isBlank(localValue)))
       candidates.push({ fp: fpL, value: localValue });
     candidates.sort((a, b) => {
-      if (a.value && b.value) {
+      if (id.startsWith("yearPicks:") && a.value && b.value) {
         const at = Date.parse((a.value as { updatedAt: string }).updatedAt);
         const bt = Date.parse((b.value as { updatedAt: string }).updatedAt);
         if (Number.isFinite(at) && Number.isFinite(bt) && at !== bt) return bt - at;
       }
       return b.fp.localeCompare(a.fp);
     });
-    const value = candidates[0]!.value;
+    // 默认按内容哈希；目录先比更新时间；年度寄语按同一顺序接上每台手机的文字。
+    let value = candidates[0]!.value;
+    if (id.startsWith("yearNotes:") && typeof value === "string") {
+      let joined = value;
+      for (const candidate of candidates.slice(1))
+        if (typeof candidate.value === "string") joined = joinNotes(joined, candidate.value);
+      value = joined;
+    }
     if (rootFp(value) !== fpL) {
       setRoot(next, id, value);
       countRoot(id);
     }
   }
-  if (Object.keys(stamps).length) next.rootStamps = stamps;
-  else delete next.rootStamps;
   // 装订时刻：谁先装订算谁的（按年取早）。
   const bound: Record<string, string> = { ...(local.yearBooksBoundAt ?? {}) };
   for (const r of ordered)

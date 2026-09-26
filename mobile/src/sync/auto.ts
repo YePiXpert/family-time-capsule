@@ -108,7 +108,7 @@ export function createAutoSync(deps: AutoSyncDeps) {
 
 const sharedFields = [
   "records", "letters", "albums", "series", "persons", "profile",
-  "yearNotes", "yearCovers", "yearPicks", "yearBooksBoundAt", "tombstones",
+  "yearNotes", "yearCovers", "yearPicks", "yearBooksBoundAt", "tombstones", "rootStamps",
 ] as const;
 export function sharedChanged(prev: Library, next: Library): boolean {
   return sharedFields.some((field) => prev[field] !== next[field]);

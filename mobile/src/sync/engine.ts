@@ -153,7 +153,7 @@ export async function assertSameKey(deps: EngineDeps): Promise<string> {
 }
 /**
  * 库根每个字段发不发给家人。新加的根字段不在这里分好类就编译不过：设备上的东西不会悄悄发出去，
- * 共享的东西也不会漏出指纹。家人合并只读 profile、年度寄语／封面／目录、装订时刻与墓碑；
+ * 共享的东西也不会漏出指纹。家人合并只读 profile、年度寄语／封面／目录、根值的版本时刻、装订时刻与墓碑；
  * 其余是这台手机自己的（每天的小问题、默认落款、锁、外观、提醒卡、收到的分享、导出时刻），
  * 写入计数每写一次都变，发出去会让指纹次次不同。welcome 不私密、只翻一次，照发（Build 71 从远端整库恢复时不再弹欢迎页）。
  */
@@ -165,6 +165,7 @@ const PUBLISHED_ROOT = {
   yearPicks: true,
   yearBooksBoundAt: true,
   tombstones: true,
+  rootStamps: true,
   welcome: true,
   revision: false,
   settings: false,

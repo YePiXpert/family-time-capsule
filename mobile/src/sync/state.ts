@@ -49,6 +49,11 @@ export type RemoteState = {
   lastSyncAt?: string;
   lastSyncSummary?: SyncSummary;
   lastError?: string;
+  /**
+   * 刚用一把新钥匙加入、还没成功并入过家人：合并按「头一回加入」来——家里已有的根值（名字、格言、寄语…）
+   * 听家里的，本机只补家里没有的。第一轮合并落进本机库后才去掉；中途失败、应用被杀，下次照样按加入来。
+   */
+  joining?: true;
 };
 /** 有手机这一轮没读成时的一句提示；都读到了就是空串。 */
 export function unreadNotice(summary: SyncSummary | undefined): string {
@@ -178,6 +183,7 @@ export async function readRemoteState(
     ...(typeof parsed.lastError === "string"
       ? { lastError: parsed.lastError }
       : {}),
+    ...(parsed.joining === true ? { joining: true as const } : {}),
   };
 }
 /** 先写 .part 再同步换名：断电也不会留下半个 JSON，返回时新内容已经在位（异步 move 会让紧接着的读看到「没有」）。 */
