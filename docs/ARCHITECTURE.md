@@ -71,11 +71,11 @@
 
 ## AI
 
-手机只通过 `ai/client.ts` 调用 `/api/v1/ai/*`。文字任务有五种：`polish`、`recap`、`ask`、`question`、`editor`。服务端用 `server/src/prompts.ts` 拼好提示词再交给上游，结果在服务端校验通过才返回；请求里带照片会被拒绝。转写端点收 m4a，服务端用 ffmpeg 转码后送去转写。手机端有本机识别时优先用本机。每项任务具体送什么，以 [AI 说明](AI-PROMPTS.md) 为准；模型、额度、缓存与时限见部署指南。
+手机只通过 `ai/client.ts` 调用 `/api/v1/ai/*`。文字任务有五种：`polish`、`recap`、`ask`、`question`、`editor`。服务端用 `server/src/prompts.ts` 拼好提示词再交给上游，结果在服务端校验通过才返回；请求里带照片会被拒绝。转写端点收 m4a，服务端用 ffmpeg 转码后送去转写（强制按 MP4 容器解析、只准读本地文件，上传内容不能让 ffmpeg 去读别的文件）。手机端有本机识别时优先用本机。每项任务具体送什么，以 [AI 说明](AI-PROMPTS.md) 为准；模型、额度、缓存与时限见部署指南。
 
 ## 服务端接口
 
-共 36 条路由：`server/src/app.ts` 装配公共部分（错误处理、先验令牌再读请求体、关停）和三条匿名的状态路由，其余按领域在 `server/src/routes/`（`family`、`ai`、`backup`、`admin`）。前缀 `/api/v1`（`/healthz` 与 `/` 除外）；`server/tests/routes.test.ts` 核对这张表和鉴权。匿名路由在路由选项里标 `open`，其余一律先验令牌。鉴权一栏的含义：匿名接口按地址和全局限流；「设备」要求 `Authorization: Bearer <设备令牌>`；「管理者」要求设备令牌属于管理者。
+共 36 条路由：`server/src/app.ts` 装配公共部分（错误处理、先验令牌再读请求体、关停）和三条匿名的状态路由，其余按领域在 `server/src/routes/`（`family`、`ai`、`backup`、`admin`）。前缀 `/api/v1`（`/healthz` 与 `/` 除外）；`server/tests/routes.test.ts` 核对这张表和鉴权。匿名路由在路由选项里标 `open`，其余一律先验令牌。鉴权一栏的含义：匿名接口按来源地址和全局限流（来源地址默认取连接地址，只有部署时设了 `TRUST_PROXY` 才认那台反代写的 `X-Forwarded-For`；配对申请另有同一地址同时挂 3 条、全服务 20 条的上限；恢复接口先核对，只把核对不过的记进限流）；「设备」要求 `Authorization: Bearer <设备令牌>`；「管理者」要求设备令牌属于管理者。
 
 | 方法 | 路径 | 鉴权 | 用途 |
 | --- | --- | --- | --- |

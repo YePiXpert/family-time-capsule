@@ -186,6 +186,24 @@ test('真实 ffmpeg 超时 kill 后清理；取消和 ENOENT 也不留文件',as
  await assert.rejects(ffmpegTranscoder({tmpDir:temp})(audio,{maxSeconds:180,signal:AbortSignal.abort()}));assert.deepEqual(readdirSync(temp),[]);
  await assert.rejects(ffmpegTranscoder({tmpDir:temp,ffmpegPath:join(dir,'missing')})(audio,{maxSeconds:180}),(e:unknown)=>(e as NodeJS.ErrnoException).code==='ENOENT');
 });
+// 审计 2026-09-26 H1：ffmpeg 自己猜格式时，上传一段 ffconcat／HLS 文本冒充 m4a，就能让它读临时目录里别的文件。
+test('真实 ffmpeg 只按 MP4 容器解析：冒充 m4a 的 ffconcat 与播放列表读不到别的文件，faststart 与 3gp 照常',async t=>{
+ if(!ffmpegAvailable(t))return;const {dir,temp}=audioDir(t),transcoder=ffmpegTranscoder({tmpDir:temp});
+ const other=join(temp,'other.wav');
+ const made=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','sine=frequency=440:duration=2','-ar','16000','-ac','1',other],{encoding:'utf8'});
+ assert.equal(made.status,0,made.stderr);
+ try {
+  for(const script of ['ffconcat version 1.0\nfile other.wav\n',`ffconcat version 1.0\nfile ${other}\n`,`#EXTM3U\n#EXTINF:2,\nfile:${other}\n#EXT-X-ENDLIST\n`])
+   await assert.rejects(transcoder(Buffer.from(script),{maxSeconds:180}),problem('INVALID_AUDIO',400));
+ } finally {rmSync(other);}
+ assert.deepEqual(readdirSync(temp),[]);
+ // 手机两端的录音都是 MP4 容器里的 AAC；moov 在前、3gp 品牌也归 mov 解复用器。
+ for(const [name,args] of [['fast.m4a',['-movflags','+faststart']],['voice.3gp',['-ar','8000','-ac','1']]] as const){
+  const file=join(dir,name),result=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','sine=duration=3','-c:a','aac',...args,file],{encoding:'utf8'});
+  assert.equal(result.status,0,result.stderr);
+  assert.ok(Math.abs((await transcoder(readFileSync(file),{maxSeconds:180})).seconds-3)<0.2,name);
+ }
+});
 test('CPA 网关只接收一项 wav 音频、system 提示和指定模型，校验错误及空结果',async t=>{
  const dir=mkdtempSync(join(tmpdir(),'anan-asr-gateway-')),key=join(dir,'key');writeFileSync(key,'test-key\n');t.after(()=>rmSync(dir,{recursive:true,force:true}));
  const received:{url:string|undefined;authorization:string|undefined;body:any}[]=[];let status=200,reply:unknown={choices:[{message:{content:' 你好呀 '}}],usage:{total_tokens:9}};
@@ -237,7 +255,7 @@ test('模拟子进程验证临时文件权限、参数、WAV 封装和所有退�
  const mock=t.mock.method(cp,'spawn',(_command:string,args:string[])=>{
   const file=args[args.indexOf('-i')+1]!;
   assert.equal(statSync(file).mode&0o777,0o600);assert.deepEqual(readFileSync(file),input);
-  assert.deepEqual(args,['-hide_banner','-loglevel','error','-nostdin','-i',file,'-vn','-ac','1','-ar','16000','-t','181','-f','s16le','pipe:1']);
+  assert.deepEqual(args,['-hide_banner','-loglevel','error','-nostdin','-f','mov','-protocol_whitelist','file','-i',file,'-vn','-ac','1','-ar','16000','-t','181','-f','s16le','pipe:1']);
   const child=Object.assign(new EventEmitter(),{stdout:new PassThrough(),stderr:new PassThrough(),kill:(signal:string)=>{
    assert.equal(signal,'SIGKILL');killCount++;queueMicrotask(()=>child.emit('close',null));return true;
   }});

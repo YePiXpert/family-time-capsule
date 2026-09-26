@@ -218,7 +218,8 @@ test('不需要登录的申请接口有上限与限流；申请本身不带任�
  // 同一地址一分钟内最多登记 10 次（前面那一次也算）。
  f.store.db.prepare("UPDATE pair_requests SET status='cancelled'").run();
  const statuses=[];
- for(let i=0;i<10;i++)statuses.push((await f.call('POST','/api/v1/pair/requests',{publicKey:b64url(32),deviceName:'手机',claimHash:sha(String(i))})).status);
+ // 每次登记完就收掉，只看限流，不碰同一地址的挂起名额。
+ for(let i=0;i<10;i++){statuses.push((await f.call('POST','/api/v1/pair/requests',{publicKey:b64url(32),deviceName:'手机',claimHash:sha(String(i))})).status);f.store.db.prepare("UPDATE pair_requests SET status='cancelled'").run();}
  assert.deepEqual(statuses,[...Array(9).fill(201),429]);
  // 公钥、手机名、领取凭据格式都要对。
  f.store.db.prepare('DELETE FROM pair_requests').run();
@@ -301,11 +302,17 @@ test('所有管理者手机都没了：凭恢复证明选「我是谁」，登�
  assert.equal((await f.call('GET','/api/v1/me',undefined,mom.token)).status,200);
 });
 
-test('恢复接口严格限流',async t=>{
+test('恢复接口严格限流：只记核对不过的，对的恢复码不被挡',async t=>{
  const f=fixture(t);
  const statuses=[];
  for(let i=0;i<6;i++)statuses.push((await f.call('POST','/api/v1/recovery/claim',{proof:'cd'.repeat(32)})).status);
  assert.deepEqual(statuses,[403,403,403,403,403,429]);
+ // 格式不对的也算一次失败。
+ assert.equal((await f.call('POST','/api/v1/recovery/claim',{proof:'zz'})).status,429);
+ // 同一地址被限流了，对的恢复码两步照样走通。
+ assert.equal((await f.call('POST','/api/v1/recovery/claim',{proof:PROOF})).status,200);
+ assert.equal((await f.call('POST','/api/v1/recovery/claim',{proof:PROOF,memberId:f.admin!.member.id,deviceName:'爸爸的新手机',publicKey:PUBLIC_KEY})).status,200);
+ assert.equal((await f.call('POST','/api/v1/recovery/claim',{proof:'cd'.repeat(32)})).status,429);
 });
 
 test('重新生成恢复码：版本只能加一、钥匙指纹要对，旧恢复码立刻失效；家人不能换',async t=>{

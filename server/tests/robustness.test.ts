@@ -9,17 +9,18 @@ import { Agent, request } from 'node:http';
 import { Readable } from 'node:stream';
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { unusedTranscribe, seedFamily, PUBLIC_KEY } from './helpers.ts';
-import { Store } from '../src/store.ts';
-import { createApp } from '../src/app.ts';
+import Database from 'better-sqlite3';
+import { unusedTranscribe, seedFamily, PUBLIC_KEY, PROOF } from './helpers.ts';
+import { PAIR_PENDING_LIMIT, PAIR_PENDING_PER_SOURCE, Store } from '../src/store.ts';
+import { createApp, parseTrustProxy } from '../src/app.ts';
 import { BackupStore } from '../src/backup-store.ts';
 import { shutdown } from '../src/shutdown.ts';
 
-function fixture() {
+function fixture(opts:{trustProxy?:string}={}) {
  const dir=mkdtempSync(join(tmpdir(),'anan-robust-'));
  const store=new Store(':memory:'),backups=new BackupStore(dir);
  backups.freeBytes=async()=>10*1024**3;
- const app=createApp(store,async()=>{throw new Error('no provider');},'test',backups,unusedTranscribe);
+ const app=createApp(store,async()=>{throw new Error('no provider');},'test',backups,unusedTranscribe,opts);
  const owner=seedFamily(store);
  const close=async()=>{await app.close();store.close();rmSync(dir,{recursive:true,force:true});};
  return {dir,store,backups,app,owner,close};
@@ -152,4 +153,72 @@ test('R1 the largest legal manifest and prune bodies still fit their route limit
  assert.equal(manifest.statusCode,200,manifest.body);
  const prune=await f.app.inject({method:'POST',url:'/api/v1/backup/prune',headers,payload:{keep:objects}});
  assert.equal(prune.statusCode,200,prune.body);
+});
+
+// 审计 2026-09-26 A1：匿名灌请求能把所有人挡在门外。
+const pair=(app:ReturnType<typeof fixture>['app'],remoteAddress:string,headers:Record<string,string>={})=>app.inject({method:'POST',url:'/api/v1/pair/requests',remoteAddress,headers,payload:{publicKey:PUBLIC_KEY,deviceName:'x',claimHash:'a'.repeat(64)}});
+// 全服务 20 条挂起名额曾是一份：一个地址守着自己每分钟 10 次的额度，两分钟就占满 10 分钟。
+test('A1 one anonymous address, staying under its own rate limit, cannot lock new phones out of pairing',async t=>{
+ t.mock.timers.enable({apis:['Date'],now:Date.now()});
+ const f=fixture();t.after(f.close);
+ const flood=[];
+ for(let i=0;i<10;i++)flood.push((await pair(f.app,'203.0.113.9')).statusCode);
+ t.mock.timers.tick(61_000);
+ for(let i=0;i<10;i++)flood.push((await pair(f.app,'203.0.113.9')).statusCode);
+ assert.equal(flood.filter(status=>status===201).length,PAIR_PENDING_PER_SOURCE);
+ const legit=await pair(f.app,'198.51.100.7');
+ assert.equal(legit.statusCode,201,`a real new phone from another address got ${legit.statusCode} ${legit.body}`);
+ // 来源地址只存带键哈希，离开 pending 就清掉；收掉一条，这个地址又能登记。
+ const rows=f.store.db.prepare("SELECT id,source FROM pair_requests WHERE status='pending'").all() as {id:string;source:string}[];
+ assert.ok(rows.every(row=>/^[a-f0-9]{64}$/.test(row.source)&&!row.source.includes('203.0.113')));
+ f.store.cancelPair(rows[0]!.id);
+ assert.equal((f.store.db.prepare('SELECT source FROM pair_requests WHERE id=?').get(rows[0]!.id) as {source:string|null}).source,null);
+ t.mock.timers.tick(61_000);
+ assert.equal((await pair(f.app,rows[0]!.source===rows[1]!.source?'203.0.113.9':'198.51.100.7')).statusCode,201);
+ // 全服务上限还在。
+ f.store.db.prepare("UPDATE pair_requests SET source=NULL").run();
+ for(let i=0;i<PAIR_PENDING_LIMIT;i++)try{f.store.createPair({publicKey:PUBLIC_KEY,deviceName:'x',claimHash:'b'.repeat(64)});}catch{}
+ assert.equal((await pair(f.app,'192.0.2.200')).statusCode,429);
+});
+// 恢复接口先计数后核对：每分钟 10 个垃圾证明，管理者手里对的恢复码就一直 429。
+test('A1 junk recovery proofs cannot make the correct recovery code 429; failures are still throttled',async t=>{
+ const f=fixture();t.after(f.close);
+ const junk=[];
+ for(let i=0;i<12;i++)junk.push((await f.app.inject({method:'POST',url:'/api/v1/recovery/claim',remoteAddress:`203.0.113.${i}`,payload:{proof:'cd'.repeat(32)}})).statusCode);
+ assert.deepEqual(junk,[...Array(10).fill(403),429,429]);
+ const owner=await f.app.inject({method:'POST',url:'/api/v1/recovery/claim',remoteAddress:'198.51.100.7',payload:{proof:PROOF}});
+ assert.equal(owner.statusCode,200,`the admin's correct recovery proof got ${owner.statusCode} ${owner.body}`);
+ // 管理者自己抄错一个词：照样被限流，改对了立刻通过。
+ assert.equal((await f.app.inject({method:'POST',url:'/api/v1/recovery/claim',remoteAddress:'198.51.100.7',payload:{proof:'ef'.repeat(32)}})).statusCode,429);
+ assert.equal((await f.app.inject({method:'POST',url:'/api/v1/recovery/claim',remoteAddress:'198.51.100.7',payload:{proof:PROOF}})).statusCode,200);
+});
+// 反代后面所有人共用反代的地址：按地址的名额只有在认可信反代的 X-Forwarded-For 时才分得开。
+test('A1 TRUST_PROXY: only the listed proxy may name the client address; default ignores forwarded headers',async t=>{
+ for(const bad of ['true','1','*','10.0.0.0/33','192.0.2.1/8/1','example.invalid'])assert.throws(()=>parseTrustProxy(bad),/TRUST_PROXY/,bad);
+ assert.equal(parseTrustProxy(undefined),false);assert.equal(parseTrustProxy(' '),false);
+ assert.deepEqual(parseTrustProxy('192.0.2.10, 2001:db8::/32,loopback'),['192.0.2.10','2001:db8::/32','loopback']);
+ const proxied=fixture({trustProxy:'192.0.2.10'});t.after(proxied.close);
+ for(let i=0;i<PAIR_PENDING_PER_SOURCE;i++)assert.equal((await pair(proxied.app,'192.0.2.10',{'x-forwarded-for':'203.0.113.9'})).statusCode,201);
+ assert.equal((await pair(proxied.app,'192.0.2.10',{'x-forwarded-for':'203.0.113.9'})).statusCode,429);
+ // 客户端自己塞的转发头挡在反代追加的那一跳后面，改不了身份。
+ assert.equal((await pair(proxied.app,'192.0.2.10',{'x-forwarded-for':'198.51.100.7, 203.0.113.9'})).statusCode,429);
+ assert.equal((await pair(proxied.app,'192.0.2.10',{'x-forwarded-for':'198.51.100.7'})).statusCode,201);
+ // 不在名单里的连接写转发头没用。
+ for(let i=0;i<PAIR_PENDING_PER_SOURCE;i++)await pair(proxied.app,'198.51.100.99',{'x-forwarded-for':`192.0.2.${100+i}`});
+ assert.equal((await pair(proxied.app,'198.51.100.99',{'x-forwarded-for':'192.0.2.250'})).statusCode,429);
+ const direct=fixture();t.after(direct.close);
+ for(let i=0;i<PAIR_PENDING_PER_SOURCE;i++)await pair(direct.app,'192.0.2.10',{'x-forwarded-for':`203.0.113.${i}`});
+ assert.equal((await pair(direct.app,'192.0.2.10',{'x-forwarded-for':'203.0.113.200'})).statusCode,429);
+});
+test('A1 an existing database gains the pair source column; old pending rows only count toward the global cap',t=>{
+ const dir=mkdtempSync(join(tmpdir(),'anan-robust-migrate-')),file=join(dir,'ai.sqlite');t.after(()=>rmSync(dir,{recursive:true,force:true}));
+ const old=new Database(file);
+ old.exec('CREATE TABLE pair_requests(id TEXT PRIMARY KEY,device_id TEXT NOT NULL UNIQUE,public_key TEXT NOT NULL,device_name TEXT NOT NULL,claim_hash TEXT NOT NULL,status TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL,member_id TEXT,approved_by TEXT,enc TEXT,ct TEXT,binding_json TEXT)');
+ old.prepare("INSERT INTO pair_requests(id,device_id,public_key,device_name,claim_hash,status,created_at,expires_at) VALUES(?,?,?,'旧手机',?,'pending',?,?)").run(randomUUID(),randomUUID(),PUBLIC_KEY,'ab'.repeat(32),Date.now(),Date.now()+600000);
+ old.close();
+ const store=new Store(file);t.after(()=>store.close());seedFamily(store);
+ assert.ok((store.db.prepare('PRAGMA table_info(pair_requests)').all() as {name:string}[]).some(column=>column.name==='source'));
+ for(let i=0;i<PAIR_PENDING_PER_SOURCE;i++)store.createPair({publicKey:PUBLIC_KEY,deviceName:'新手机',claimHash:'cd'.repeat(32)},'203.0.113.9');
+ assert.throws(()=>store.createPair({publicKey:PUBLIC_KEY,deviceName:'新手机',claimHash:'cd'.repeat(32)},'203.0.113.9'),/申请太多/);
+ assert.equal((store.db.prepare("SELECT COUNT(*) n FROM pair_requests WHERE status='pending'").get() as {n:number}).n,PAIR_PENDING_PER_SOURCE+1);
 });
