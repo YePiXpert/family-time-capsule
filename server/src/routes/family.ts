@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z, ZodError } from 'zod';
 import { Problem } from '../store.ts';
 import { name, open, type Ctx } from './context.ts';
 /**
@@ -32,7 +32,7 @@ export function familyRoutes({app,store,auth,admin,throttle}:Ctx) {
  app.post('/api/v1/pair/requests',open,async (req,reply)=>{
   throttle(req,'pair',10,30);
   const input=z.object({publicKey:key32,deviceName,claimHash:hex(32)}).strict().parse(req.body);
-  return reply.code(201).send(store.createPair(input));
+  return reply.code(201).send(store.createPair(input,req.ip));
  });
  app.get('/api/v1/pair/requests/:id',async req=>{
   admin(req.headers.authorization);
@@ -61,12 +61,18 @@ export function familyRoutes({app,store,auth,admin,throttle}:Ctx) {
   return {ok:true};
  });
  app.post('/api/v1/recovery/claim',open,async req=>{
-  throttle(req,'recovery',5,10);
-  const input=z.object({proof:hex(32),memberId:z.string().uuid().optional(),deviceName:deviceName.optional(),publicKey:key32.optional()}).strict().parse(req.body);
-  // 第一步只核对恢复证明、列出管理者让选「我是谁」；第二步才登记新手机。
-  if(!input.memberId||!input.deviceName||!input.publicKey){store.checkRecovery(input.proof);return {admins:store.admins().map(m=>({id:m.id,name:m.name}))};}
-  const {family,...device}=store.recoverAdmin(input.proof,{memberId:input.memberId,deviceName:input.deviceName,publicKey:input.publicKey});
-  return {...device,familyId:family.familyId,keyId:family.keyId,recovery:{envelope:family.recoveryEnvelope,version:family.recoveryVersion}};
+  // 恢复证明是 128 位恢复秘密的 HKDF 输出，猜不中；先核对、只把核对不过的记进限流：
+  // 匿名乱试灌满额度也挡不住管理者手里对的恢复码。没有家庭与证明不对是同一个 403，一样计数。
+  try {
+   const input=z.object({proof:hex(32),memberId:z.string().uuid().optional(),deviceName:deviceName.optional(),publicKey:key32.optional()}).strict().parse(req.body);
+   // 第一步只核对恢复证明、列出管理者让选「我是谁」；第二步才登记新手机。
+   if(!input.memberId||!input.deviceName||!input.publicKey){store.checkRecovery(input.proof);return {admins:store.admins().map(m=>({id:m.id,name:m.name}))};}
+   const {family,...device}=store.recoverAdmin(input.proof,{memberId:input.memberId,deviceName:input.deviceName,publicKey:input.publicKey});
+   return {...device,familyId:family.familyId,keyId:family.keyId,recovery:{envelope:family.recoveryEnvelope,version:family.recoveryVersion}};
+  } catch(error) {
+   if(error instanceof ZodError||(error instanceof Problem&&error.code==='RECOVERY_INVALID'))throttle(req,'recovery',5,10);
+   throw error;
+  }
  });
  app.put('/api/v1/admin/recovery',async req=>{
   admin(req.headers.authorization);

@@ -32,7 +32,9 @@ export function ffmpegTranscoder(opts:{ffmpegPath?:string;tmpDir?:string;timeout
    try {await handle.writeFile(input);} finally {await handle.close();}
    signal?.throwIfAborted();
    const pcm=await new Promise<Buffer>((resolve,reject)=>{
-    const child=spawn(opts.ffmpegPath??'ffmpeg',['-hide_banner','-loglevel','error','-nostdin','-i',file,'-vn','-ac','1','-ar','16000','-t',String(maxSeconds+1),'-f','s16le','pipe:1'],{stdio:['ignore','pipe','pipe']});
+    // 手机只传 MP4 容器的 AAC（iOS、安卓录音同一预设）：强制 mov 解复用、只准 file 协议，
+    // 上传内容冒充 ffconcat／播放列表也不能让 ffmpeg 去读临时目录里别的文件或发网络请求。
+    const child=spawn(opts.ffmpegPath??'ffmpeg',['-hide_banner','-loglevel','error','-nostdin','-f','mov','-protocol_whitelist','file','-i',file,'-vn','-ac','1','-ar','16000','-t',String(maxSeconds+1),'-f','s16le','pipe:1'],{stdio:['ignore','pipe','pipe']});
     const chunks:Buffer[]=[];let bytes=0,stderr=Buffer.alloc(0),failure:unknown;
     const stop=(error:unknown)=>{failure??=error;child.kill('SIGKILL');};
     const abort=()=>stop(invalidAudio());

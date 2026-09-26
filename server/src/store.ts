@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { MODEL_ID } from './ai-model.ts';
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
 
 /** 成员默认远端备份配额 20 GiB；主人可在管理页调整。 */
 export const DEFAULT_BACKUP_LIMIT = 20 * 1024 ** 3;
@@ -14,6 +14,8 @@ export const PAIR_TTL_MS = 10 * 60 * 1000;
 export const PAIR_CONFIRM_MS = 24 * 60 * 60 * 1000;
 /** 同时挂着的配对申请上限：不需要登录的接口，不能让人灌满。 */
 export const PAIR_PENDING_LIMIT = 20;
+/** 同一来源地址最多同时挂几条：一个地址守着自己的限流额度，也占不满全服务的名额。 */
+export const PAIR_PENDING_PER_SOURCE = 3;
 /** 一台手机一年没用过，要管理者重新批准（主人 2026-09-24 拍板）。 */
 export const DEVICE_IDLE_MS = 365 * 24 * 60 * 60 * 1000;
 const TOUCH_MS = 60 * 60 * 1000;
@@ -32,7 +34,7 @@ export type Family = { familyId: string; keyId: string; recoveryEnvelope: string
 export type FamilyInput = { familyId: string; keyId: string; recovery: { envelope: string; verifier: string } };
 /** 管理者封钥匙包与新手机解包时绑定的全部字段；两边必须逐字相同。 */
 export type PairBinding = { familyId: string; requestId: string; memberId: string; role: Role; deviceId: string; deviceName: string; approverDeviceId: string; keyId: string; expiresAt: string };
-type PairRow = { id: string; device_id: string; public_key: string; device_name: string; claim_hash: string; status: 'pending'|'approved'|'confirmed'|'cancelled'|'expired'; created_at: number; expires_at: number; member_id: string|null; approved_by: string|null; enc: string|null; ct: string|null; binding_json: string|null };
+type PairRow = { id: string; device_id: string; public_key: string; device_name: string; claim_hash: string; status: 'pending'|'approved'|'confirmed'|'cancelled'|'expired'; created_at: number; expires_at: number; source: string|null; member_id: string|null; approved_by: string|null; enc: string|null; ct: string|null; binding_json: string|null };
 const MEMBER_COLUMNS = 'id,name,role,enabled,photo_limit,write_limit,backup_limit_bytes';
 /** 一台设备发布的清单：密文索引、钥匙指纹、登记的对象。旧版整份备份迁来的行 deviceId 是 `legacy:<成员 id>`，deviceName 为 null。 */
 export type BackupManifest = { deviceId: string; memberId: string; deviceName: string | null; keyId: string; index: string; updatedAt: number; objects: string[] };
@@ -40,6 +42,8 @@ export type Settings = { paused: boolean; defaultModel: string; enabledModels: s
 export const initialSettings: Settings = { paused: false, defaultModel: MODEL_ID, enabledModels: [MODEL_ID], globalPhotos: 500, globalWrites: 100 };
 export class Store {
   db: Database.Database;
+  /** 配对来源地址只存带键哈希、只在申请挂着时留着；键只在内存里，重启即换，库里留不下可还原的地址。 */
+  private readonly sourceKey = randomBytes(32);
   constructor(file: string) {
     this.db = new Database(file);
     this.db.pragma('journal_mode = WAL'); this.db.pragma('foreign_keys = ON'); this.db.pragma('busy_timeout = 5000');
@@ -55,7 +59,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS backup_object_claims(device_id TEXT NOT NULL REFERENCES devices(id),object_id TEXT NOT NULL,claimed_at INTEGER NOT NULL,PRIMARY KEY(device_id,object_id));
       CREATE INDEX IF NOT EXISTS backup_object_claims_time ON backup_object_claims(claimed_at);
       CREATE TABLE IF NOT EXISTS family(id INTEGER PRIMARY KEY CHECK(id=1),family_id TEXT NOT NULL,key_id TEXT NOT NULL,recovery_envelope TEXT NOT NULL,recovery_verifier TEXT NOT NULL,recovery_version INTEGER NOT NULL,created_at INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS pair_requests(id TEXT PRIMARY KEY,device_id TEXT NOT NULL UNIQUE,public_key TEXT NOT NULL,device_name TEXT NOT NULL,claim_hash TEXT NOT NULL,status TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL,member_id TEXT,approved_by TEXT,enc TEXT,ct TEXT,binding_json TEXT);
+      CREATE TABLE IF NOT EXISTS pair_requests(id TEXT PRIMARY KEY,device_id TEXT NOT NULL UNIQUE,public_key TEXT NOT NULL,device_name TEXT NOT NULL,claim_hash TEXT NOT NULL,status TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL,member_id TEXT,approved_by TEXT,enc TEXT,ct TEXT,binding_json TEXT,source TEXT);
       CREATE TABLE IF NOT EXISTS activation_codes(code_hash TEXT PRIMARY KEY,expires_at INTEGER NOT NULL,used_at INTEGER);
       CREATE INDEX IF NOT EXISTS requests_processing ON requests(status) WHERE status='processing';
       CREATE INDEX IF NOT EXISTS requests_member_created ON requests(member_id,created_at);
@@ -81,6 +85,8 @@ export class Store {
     const deviceColumns=(this.db.prepare('PRAGMA table_info(devices)').all() as {name:string}[]).map(column=>column.name);
     if(!deviceColumns.includes('public_key'))this.db.exec('ALTER TABLE devices ADD COLUMN public_key TEXT;ALTER TABLE devices ADD COLUMN approved_by TEXT;ALTER TABLE devices ADD COLUMN pending_until INTEGER;');
     if(!deviceColumns.includes('last_used_at')){this.db.exec('ALTER TABLE devices ADD COLUMN last_used_at INTEGER');this.db.prepare('UPDATE devices SET last_used_at=?').run(Date.now());}
+    // 1.1.7：配对申请记来源地址的带键哈希，按地址分挂着的名额；旧行没有来源，只算全服务上限。
+    if(!(this.db.prepare('PRAGMA table_info(pair_requests)').all() as {name:string}[]).some(column=>column.name==='source'))this.db.exec('ALTER TABLE pair_requests ADD COLUMN source TEXT');
     this.db.prepare('INSERT OR IGNORE INTO settings VALUES(1,?)').run(JSON.stringify(initialSettings));
     this.setSettings(this.settings());
   }
@@ -180,27 +186,29 @@ export class Store {
     return { token, member: this.memberById(memberId,deviceId) };
   }
   private expirePairs(now: number) {
-    this.db.prepare("UPDATE pair_requests SET status='expired',enc=NULL,ct=NULL WHERE status='pending' AND expires_at<?").run(now);
+    this.db.prepare("UPDATE pair_requests SET status='expired',enc=NULL,ct=NULL,source=NULL WHERE status='pending' AND expires_at<?").run(now);
     // 匿名接口攒下的已结束申请只留一周，否则每次配对都要扫一遍全部历史。
     this.db.prepare("DELETE FROM pair_requests WHERE status IN ('expired','cancelled') AND expires_at<?").run(now-7*24*60*60*1000);
     // 批准了却一直没确认的：设备作废，申请也收掉。
     const stale=this.db.prepare("SELECT p.id,p.device_id FROM pair_requests p JOIN devices d ON d.id=p.device_id WHERE p.status='approved' AND d.pending_until<?").all(now) as {id:string;device_id:string}[];
-    for(const row of stale){this.db.prepare('UPDATE devices SET revoked=1 WHERE id=?').run(row.device_id);this.db.prepare("UPDATE pair_requests SET status='expired',enc=NULL,ct=NULL WHERE id=?").run(row.id);}
+    for(const row of stale){this.db.prepare('UPDATE devices SET revoked=1 WHERE id=?').run(row.device_id);this.db.prepare("UPDATE pair_requests SET status='expired',enc=NULL,ct=NULL,source=NULL WHERE id=?").run(row.id);}
   }
   private cancelOpenPairs(now: number) {
     this.expirePairs(now);
     this.db.prepare("UPDATE devices SET revoked=1 WHERE id IN (SELECT device_id FROM pair_requests WHERE status='approved')").run();
-    this.db.prepare("UPDATE pair_requests SET status='cancelled',enc=NULL,ct=NULL WHERE status IN ('pending','approved')").run();
+    this.db.prepare("UPDATE pair_requests SET status='cancelled',enc=NULL,ct=NULL,source=NULL WHERE status IN ('pending','approved')").run();
   }
-  /** 新手机登记配对申请：只有公钥、手机名与领取凭据的哈希；不带任何权限。 */
-  createPair(input: { publicKey: string; deviceName: string; claimHash: string }, now=Date.now()) {
+  /** 新手机登记配对申请：只有公钥、手机名与领取凭据的哈希；不带任何权限。source 是请求的来源地址，只存带键哈希。 */
+  createPair(input: { publicKey: string; deviceName: string; claimHash: string }, source?: string, now=Date.now()) {
     return this.db.transaction(() => {
       this.expirePairs(now);
       if(!this.family()) throw new Problem(409,'FAMILY_MISSING','这台服务还没有家庭，请先让管理者开一个家庭。');
       const pending=(this.db.prepare("SELECT COUNT(*) n FROM pair_requests WHERE status='pending'").get() as {n:number}).n;
       if(pending>=PAIR_PENDING_LIMIT) throw new Problem(429,'RATE_LIMIT','申请太多了，请稍后再试。');
+      const sourceHash=source===undefined?null:createHmac('sha256',this.sourceKey).update(source).digest('hex');
+      if(sourceHash&&(this.db.prepare("SELECT COUNT(*) n FROM pair_requests WHERE status='pending' AND source=?").get(sourceHash) as {n:number}).n>=PAIR_PENDING_PER_SOURCE) throw new Problem(429,'RATE_LIMIT','申请太多了，请稍后再试。');
       const id=randomUUID(),expiresAt=now+PAIR_TTL_MS;
-      this.db.prepare("INSERT INTO pair_requests(id,device_id,public_key,device_name,claim_hash,status,created_at,expires_at) VALUES(?,?,?,?,?,'pending',?,?)").run(id,randomUUID(),input.publicKey,input.deviceName,input.claimHash,now,expiresAt);
+      this.db.prepare("INSERT INTO pair_requests(id,device_id,public_key,device_name,claim_hash,status,created_at,expires_at,source) VALUES(?,?,?,?,?,'pending',?,?,?)").run(id,randomUUID(),input.publicKey,input.deviceName,input.claimHash,now,expiresAt,sourceHash);
       return {requestId:id,expiresAt:new Date(expiresAt).toISOString()};
     })();
   }
@@ -233,7 +241,7 @@ export class Store {
       }
       const binding: PairBinding={familyId:family.familyId,requestId:row.id,memberId:member.id,role:member.role,deviceId:row.device_id,deviceName:row.device_name,approverDeviceId:approver.deviceId!,keyId:family.keyId,expiresAt:new Date(row.expires_at).toISOString()};
       this.db.prepare('INSERT INTO devices(id,member_id,name,token_hash,revoked,created_at,public_key,approved_by,pending_until,last_used_at) VALUES(?,?,?,?,0,?,?,?,?,?)').run(row.device_id,member.id,row.device_name,digest(randomBytes(32).toString('base64url')),now,row.public_key,approver.deviceId,now+PAIR_CONFIRM_MS,now);
-      this.db.prepare("UPDATE pair_requests SET status='approved',member_id=?,approved_by=?,enc=?,ct=?,binding_json=? WHERE id=?").run(member.id,approver.deviceId,input.enc,input.ct,JSON.stringify(binding),row.id);
+      this.db.prepare("UPDATE pair_requests SET status='approved',member_id=?,approved_by=?,enc=?,ct=?,binding_json=?,source=NULL WHERE id=?").run(member.id,approver.deviceId,input.enc,input.ct,JSON.stringify(binding),row.id);
       return binding;
     })();
   }
@@ -264,7 +272,7 @@ export class Store {
       if(!row||row.device_id!==device.deviceId) throw new Problem(404,'NOT_FOUND','没有这条申请。');
       if(row.status==='confirmed') return;
       if(row.status!=='approved') throw new Problem(410,'PAIR_CLOSED','这次加入已经结束了。');
-      this.db.prepare("UPDATE pair_requests SET status='confirmed',enc=NULL,ct=NULL WHERE id=?").run(id);
+      this.db.prepare("UPDATE pair_requests SET status='confirmed',enc=NULL,ct=NULL,source=NULL WHERE id=?").run(id);
       this.db.prepare('UPDATE devices SET pending_until=NULL WHERE id=?').run(row.device_id);
     })();
   }
@@ -274,7 +282,7 @@ export class Store {
       const row=this.pairRow(id);
       if(!row||(claim!==undefined&&digest(claim)!==row.claim_hash)) throw new Problem(404,'NOT_FOUND','没有这条申请。');
       if(row.status==='approved')this.db.prepare('UPDATE devices SET revoked=1 WHERE id=?').run(row.device_id);
-      if(row.status==='pending'||row.status==='approved')this.db.prepare("UPDATE pair_requests SET status='cancelled',enc=NULL,ct=NULL WHERE id=?").run(id);
+      if(row.status==='pending'||row.status==='approved')this.db.prepare("UPDATE pair_requests SET status='cancelled',enc=NULL,ct=NULL,source=NULL WHERE id=?").run(id);
     })();
   }
   memberById(id: string, deviceId?: string) {
@@ -339,7 +347,7 @@ export class Store {
       const active=this.activeAdminDevices();
       if(active.length===1&&active[0]!.id===id) throw new Problem(400,'LAST_ADMIN_DEVICE','这是最后一台管理者手机，停用后就没人能批准新手机了。');
       this.db.prepare('UPDATE devices SET revoked=1 WHERE id=?').run(id);
-      this.db.prepare("UPDATE pair_requests SET status='cancelled',enc=NULL,ct=NULL WHERE device_id=? AND status='approved'").run(id);
+      this.db.prepare("UPDATE pair_requests SET status='cancelled',enc=NULL,ct=NULL,source=NULL WHERE device_id=? AND status='approved'").run(id);
     })();
   }
   /** 启停与额度；不能停用最后一位启用的管理者。 */

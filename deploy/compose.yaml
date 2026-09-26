@@ -13,6 +13,8 @@ services:
       TRANSCRIBE_MODEL: ${TRANSCRIBE_MODEL:-mimo-v2.5-asr}
       UPSTREAM_BASE_URL: ${UPSTREAM_BASE_URL:?Set UPSTREAM_BASE_URL}
       UPSTREAM_KEY_FILE: /run/secrets/upstream-key
+      # 可信反代的来源地址／网段；留空就不认 X-Forwarded-For。真实值只写私有 env。
+      TRUST_PROXY: ${TRUST_PROXY:-}
     volumes:
       - ${AI_DATA_DIR:?Set AI_DATA_DIR}:/data
       - ${UPSTREAM_KEY_PATH:?Set UPSTREAM_KEY_PATH}:/run/secrets/upstream-key:ro
