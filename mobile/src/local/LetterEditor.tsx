@@ -19,7 +19,7 @@ import { PermissionDenied, useRecorder } from "./editorHooks";
 import { ExitGate } from "./exitGate";
 import { isEmptyLetter } from "./empties";
 import { toDayKey } from "./dates";
-import { openAtLabel, PAST_OPEN_AT, writeLetter } from "./letters";
+import { dropLetter, openAtLabel, PAST_OPEN_AT, writeLetter } from "./letters";
 import { contentHashOf } from "./hash";
 import {
   LETTER_FROM_LIMIT,
@@ -30,7 +30,7 @@ import {
   type Stored,
 } from "./model";
 import type { Props } from "./navigation";
-import { deleteLetter, newId, now, sealLetter } from "./services";
+import { newId, now, sealLetter } from "./services";
 import {
   BottomBar,
   Button,
@@ -89,11 +89,13 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
     const d = current.current;
     if (!d || !base.current) return Promise.resolve();
     const originals = Object.values(pendingMedia.current);
+    let from: Stored<LocalLetter> | undefined,
+      written: Stored<LocalLetter> | null = null;
     const job = store.change((lib) => {
       for (const m of originals) lib.media[m.id] = m;
       // 按队列里的最新来源写：前一次落盘可能刚把这封信另存成了新信。
-      const from = base.current!;
-      const written = writeLetter(lib, { ...d.letter, id: from.id }, from, newId);
+      from = base.current!;
+      written = writeLetter(lib, { ...d.letter, id: from.id }, from, newId);
       if (!written) return;
       base.current = written;
       if (written.id !== d.letter.id && current.current) {
@@ -109,6 +111,16 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
       }
     });
     void job.catch((e) => {
+      // 没写进去：来源退回写之前那版，免得之后把库里没有的一版当成来源（另存的新信也就不算数）。
+      const lost = written as Stored<LocalLetter> | null;
+      if (lost && base.current === lost) {
+        base.current = from;
+        if (from && current.current && current.current.letter.id === lost.id)
+          current.current = {
+            ...current.current,
+            letter: { ...current.current.letter, id: from.id },
+          };
+      }
       if (mounted.current) setError(messageOf(e));
     });
     return job;
@@ -152,23 +164,27 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
     [writeNow],
   );
   // 开着写信页时同步并进了家里对这封信的改动：这边没有还没落盘的字，就换成新的一版接着写。
-  // 有没落盘的字就留着自己的，下次落盘与那一版并发，由对方手机出冲突卡。
-  useEffect(() => {
+  // 有没落盘的字就留着自己的，下次落盘与那一版并发，由对方手机出冲突卡。录音、保存途中先不换，结束后再看一次。
+  const adoptStored = () => {
     const from = base.current,
       d = current.current;
-    if (!stored || !from || !d || stored === from || stored.id !== from.id)
-      return;
-    if (contentHashOf(stored) === contentHashOf(from)) {
-      base.current = stored;
+    if (!from || !d) return;
+    const latest = store.get().letters[from.id];
+    if (!latest || latest === from) return;
+    if (contentHashOf(latest) === contentHashOf(from)) {
+      base.current = latest;
       return;
     }
-    if (stored.sealed || writeTimer.current || operation.current) return;
+    if (latest.sealed || writeTimer.current || operation.current) return;
     if (d.recordingFile || contentHashOf(d.letter) !== contentHashOf(from))
       return;
-    base.current = stored;
-    current.current = { ...d, letter: stored };
-    setDraft(current.current);
-  }, [stored]);
+    base.current = latest;
+    current.current = { ...d, letter: latest };
+    if (mounted.current) setDraft(current.current);
+  };
+  const watched = state.letters[draft?.letter.id ?? route.params.id];
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在库里这封变了时看；其余都在 ref 里
+  useEffect(adoptStored, [watched]);
   const {
     recording,
     start: startRecording,
@@ -230,6 +246,7 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
     } finally {
       operation.current = false;
       if (mounted.current) setBusy(false);
+      adoptStored();
     }
     const exit = exits.release();
     if (exit) void run(() => leave(exit));
@@ -246,7 +263,9 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
         clearTimeout(writeTimer.current);
         writeTimer.current = null;
       }
-      await deleteLetter(store, d.letter.id);
+      const from = base.current;
+      // 库里那封已被别的手机封存或换成了家里的新一版：只是退出，不替全家删掉。
+      if (from) await store.change((s) => dropLetter(s, from, now()));
       current.current = undefined;
     } else await flush();
     exitWith(action);
@@ -338,8 +357,19 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
         onPress: () => {
           void run(async () => {
             if (current.current?.recordingFile) await discardAudio();
+            if (writeTimer.current) {
+              clearTimeout(writeTimer.current);
+              writeTimer.current = null;
+            }
+            const from = base.current;
+            const result = from
+              ? await store.change((s) => dropLetter(s, from, now()))
+              : "gone";
+            if (result === "sealed")
+              throw new Error("这封信已在另一台手机上封存，不能再删。");
+            if (result === "changed")
+              throw new Error("这封信刚收到家里的新改动，看过再决定删不删。");
             current.current = undefined;
-            await deleteLetter(store, base.current?.id ?? letter.id);
             await leave(() => navigation.goBack());
           });
         },

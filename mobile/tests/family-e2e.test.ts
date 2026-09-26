@@ -21,6 +21,7 @@ import {
   upgradeFamily,
   type FlowDeps,
   type Vault,
+  awaitingConfirm,
 } from "../src/family/pairing";
 import { keyIdOf } from "../src/sync/crypto";
 import { startServer, type E2EServer } from "./helpers/e2e-server";
@@ -320,13 +321,17 @@ it("加入时确认其实成功了、回应丢了：再轮询用存好的令牌�
       await confirm(id, token);
       throw new FamilyError("NETWORK", "现在连不上服务，请稍后再试。");
     });
+    expect(awaitingConfirm(join)).toBe(false);
     await expect(pollJoin(mom, join)).rejects.toMatchObject({ code: "NETWORK" });
+    // 家庭页据此在二维码过了时限后也接着再确认，不当作过期丢下。
+    expect(awaitingConfirm(join)).toBe(true);
     expect((await mom.api.family()).me.name).toBe("妈妈");
     // 家庭页网络错误后照常再轮询一次：这回完成加入，钥匙还是家庭那把。
     const joined = await pollJoin(mom, join);
     expect(joined?.member.name).toBe("妈妈");
     expect(keyIdOf(joined!.key)).toBe(keyIdOf(dad.box.key!));
     expect(collect).toHaveBeenCalledOnce();
+    expect(awaitingConfirm(join)).toBe(false);
     expect((await dad.api.overview()).devices.find((d) => d.name === "妈妈的手机")?.pending).toBe(0);
     // 已确认的申请不能再领钥匙包。
     expect(await code(pollJoin(mom, join))).toBe("PAIR_CLOSED");

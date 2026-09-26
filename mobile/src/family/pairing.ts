@@ -122,6 +122,8 @@ export async function requestToJoin(d: FlowDeps, deviceName: string): Promise<Jo
  * 服务端对已确认的申请照样回成功，还没确认的就此确认。
  */
 const collected = new WeakMap<JoinRequest, { token: string; joined: JoinedFamily }>();
+/** 这条申请已经领到钥匙、只差确认：二维码过了时限也照样再确认。 */
+export const awaitingConfirm = (join: JoinRequest) => collected.has(join);
 /**
  * 看一眼批准了没有：还在等就返回 null。批准了就核对授权是给这条申请、这台手机的，
  * 用本机私钥和二维码里的 S 解开钥匙包（服务器伪造的解不开），先把钥匙和令牌存进钥匙串，

@@ -1,7 +1,13 @@
 /** 时间胶囊信的纯函数：状态判定、默认拆封日、标签与排序。界面不在这里。 */
 import { nthBirthday, toDayKey } from "./dates";
 import { contentHashOf, lineage } from "./hash";
-import { clone, type Library, type LocalLetter, type Stored } from "./model";
+import {
+  clone,
+  deleteLetter,
+  type Library,
+  type LocalLetter,
+  type Stored,
+} from "./model";
 
 export type LetterState = "draft" | "sealed" | "openable" | "opened";
 
@@ -132,7 +138,7 @@ export function openLetterAt(
  * 写信页落盘：整封替换，返回库里的这一封。base 是编辑页这一份的来源版本（打开时的、上次写下的或并进来的）。
  * 世系记 base 而不是库里现在那封：同步在编辑途中并进了别人的一版时，这次写入与它并发，
  * 对方手机据此把自己那版留成冲突卡，不会被悄悄盖掉。
- * 这封信编辑途中在别的手机被删或封存了：这边没写新字就什么都不存（返回 null）；写了就另存成一封新信，一个字不丢。
+ * 没写新字就什么都不存（返回 null）。这封信编辑途中在别的手机被删或封存了，写了新字就另存成一封新信，一个字不丢。
  */
 export function writeLetter(
   s: Library,
@@ -140,9 +146,10 @@ export function writeLetter(
   base: Stored<LocalLetter>,
   freshId: () => string,
 ): Stored<LocalLetter> | null {
+  // 没有新写的字（只是放弃了录音、冲刷一下）：什么都不存。库里那封可能刚并进家里的新版，拿旧的盖回去就悄悄丢了。
+  if (contentHashOf(letter) === contentHashOf(base)) return null;
   const existing = s.letters[letter.id];
   if (!existing || existing.sealed) {
-    if (contentHashOf(letter) === contentHashOf(base)) return null;
     const { ancestors: _, ...rest } = clone(letter);
     const rescued = { ...rest, id: freshId(), sealed: false as const };
     s.letters[rescued.id] = rescued;
@@ -151,4 +158,20 @@ export function writeLetter(
   const next = { ...clone(letter), ancestors: lineage(base) };
   s.letters[letter.id] = next;
   return next;
+}
+/**
+ * 写信页删掉一封还没封存的信（空信静默退场、点「删除这封信」）：库里那封就是编辑页看到的那一版才删。
+ * 别的手机封存了、或同步换成了家里的新一版，都不删——删了就是替全家删掉没看过的内容。
+ */
+export function dropLetter(
+  s: Library,
+  base: Stored<LocalLetter>,
+  now: string,
+): "deleted" | "gone" | "sealed" | "changed" {
+  const existing = s.letters[base.id];
+  if (!existing) return "gone";
+  if (existing.sealed) return "sealed";
+  if (contentHashOf(existing) !== contentHashOf(base)) return "changed";
+  deleteLetter(s, base.id, now);
+  return "deleted";
 }

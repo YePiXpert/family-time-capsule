@@ -224,6 +224,8 @@ export function NoteCard({
               testID={`${testPrefix}-edit`}
               onPress={() => {
                 updateDraft(note);
+                // 上一次放行过的离开（没真把页面移走）不能让这一轮的守卫一直关着。
+                setLeaving(null);
                 setEditing(true);
               }}
             />
