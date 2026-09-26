@@ -12,7 +12,7 @@ import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { unusedTranscribe, seedFamily, PUBLIC_KEY, PROOF } from './helpers.ts';
 import { PAIR_PENDING_LIMIT, PAIR_PENDING_PER_SOURCE, Store } from '../src/store.ts';
-import { createApp, parseTrustProxy } from '../src/app.ts';
+import { createApp, isProxyAddress, parseTrustProxy } from '../src/app.ts';
 import { BackupStore } from '../src/backup-store.ts';
 import { shutdown } from '../src/shutdown.ts';
 
@@ -209,6 +209,17 @@ test('A1 TRUST_PROXY: only the listed proxy may name the client address; default
  const direct=fixture();t.after(direct.close);
  for(let i=0;i<PAIR_PENDING_PER_SOURCE;i++)await pair(direct.app,'192.0.2.10',{'x-forwarded-for':`203.0.113.${i}`});
  assert.equal((await pair(direct.app,'192.0.2.10',{'x-forwarded-for':'203.0.113.200'})).statusCode,429);
+});
+test('A1 without TRUST_PROXY a loopback or private connection is the proxy itself: no per-address share',async t=>{
+ const f=fixture();t.after(f.close);
+ for(const proxy of ['127.0.0.1','10.1.2.3','::ffff:192.168.1.5']) {
+  const codes:number[]=[];
+  for(let i=0;i<PAIR_PENDING_PER_SOURCE+1;i++)codes.push((await pair(f.app,proxy)).statusCode);
+  assert.deepEqual(codes,codes.map(()=>201),proxy);
+ }
+ assert.equal(isProxyAddress('192.0.2.10'),false);
+ assert.equal(isProxyAddress('fd00::1'),true);
+ assert.equal(isProxyAddress('203.0.113.9'),false);
 });
 test('A1 an existing database gains the pair source column; old pending rows only count toward the global cap',t=>{
  const dir=mkdtempSync(join(tmpdir(),'anan-robust-migrate-')),file=join(dir,'ai.sqlite');t.after(()=>rmSync(dir,{recursive:true,force:true}));

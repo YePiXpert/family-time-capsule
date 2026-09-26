@@ -1,4 +1,4 @@
-import { isIP } from 'node:net';
+import { BlockList, isIP } from 'node:net';
 import Fastify from 'fastify';
 import { ZodError } from 'zod';
 import { Store, Problem } from './store.ts';
@@ -20,6 +20,14 @@ export function parseTrustProxy(value?:string):string[]|false {
   if(!named&&(!version||rest.length||(prefix!==undefined&&!(/^\d{1,3}$/.test(prefix)&&Number(prefix)<=(version===4?32:128)))))throw new Error('TRUST_PROXY 只能是逗号分隔的反代地址或网段。');
  }
  return entries.length?entries:false;
+}
+/** 本机回环、私有网段与链路本地：反代常见的来源（APP_BIND 在私有网段）。 */
+const proxyNets=new BlockList();
+for(const [net,prefix,type] of [['127.0.0.0',8,'ipv4'],['10.0.0.0',8,'ipv4'],['172.16.0.0',12,'ipv4'],['192.168.0.0',16,'ipv4'],['169.254.0.0',16,'ipv4'],['::1',128,'ipv6'],['fc00::',7,'ipv6'],['fe80::',10,'ipv6']] as const)proxyNets.addSubnet(net,prefix,type);
+export function isProxyAddress(ip:string):boolean {
+ const mapped=ip.startsWith('::ffff:')?ip.slice(7):ip;
+ const version=isIP(mapped);
+ return version===4?proxyNets.check(mapped,'ipv4'):version===6?proxyNets.check(mapped,'ipv6'):false;
 }
 /**
  * trustProxy：可信反代的地址或网段（逗号分隔，Fastify trustProxy 的字符串写法），默认不认转发头。
@@ -60,7 +68,10 @@ export function createApp(store:Store,provider:Provider,version:string,backupSto
    if(entry.count>limit)throw new Problem(429,'RATE_LIMIT','尝试过多，请稍后再试。');
   }
  };
- const ctx:Ctx={app,store,backupStore,auth,admin,throttle};
+ // 配对名额按来源地址分：没设 TRUST_PROXY 时，本机回环与私有网段的连接就是反代本身，所有人共用它的地址，
+ // 按它分就等于全服务只剩 3 个名额——这时不按地址分，只算全服务上限。
+ const pairSource=(req:{ip:string})=>trustProxy||!isProxyAddress(req.ip)?req.ip:undefined;
+ const ctx:Ctx={app,store,backupStore,auth,admin,throttle,pairSource};
  familyRoutes(ctx);
  aiRoutes(ctx,provider,transcribe);
  const {sweep}=backupRoutes(ctx);

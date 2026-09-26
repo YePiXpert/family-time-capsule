@@ -75,7 +75,7 @@
 
 ## 服务端接口
 
-共 36 条路由：`server/src/app.ts` 装配公共部分（错误处理、先验令牌再读请求体、关停）和三条匿名的状态路由，其余按领域在 `server/src/routes/`（`family`、`ai`、`backup`、`admin`）。前缀 `/api/v1`（`/healthz` 与 `/` 除外）；`server/tests/routes.test.ts` 核对这张表和鉴权。匿名路由在路由选项里标 `open`，其余一律先验令牌。鉴权一栏的含义：匿名接口按来源地址和全局限流（来源地址默认取连接地址，只有部署时设了 `TRUST_PROXY` 才认那台反代写的 `X-Forwarded-For`；配对申请另有同一地址同时挂 3 条、全服务 20 条的上限；恢复接口先核对，只把核对不过的记进限流）；「设备」要求 `Authorization: Bearer <设备令牌>`；「管理者」要求设备令牌属于管理者。
+共 36 条路由：`server/src/app.ts` 装配公共部分（错误处理、先验令牌再读请求体、关停）和三条匿名的状态路由，其余按领域在 `server/src/routes/`（`family`、`ai`、`backup`、`admin`）。前缀 `/api/v1`（`/healthz` 与 `/` 除外）；`server/tests/routes.test.ts` 核对这张表和鉴权。匿名路由在路由选项里标 `open`，其余一律先验令牌。鉴权一栏的含义：匿名接口按来源地址和全局限流（来源地址默认取连接地址，只有部署时设了 `TRUST_PROXY` 才认那台反代写的 `X-Forwarded-For`；配对申请另有同一地址同时挂 3 条、全服务 20 条的上限（没设 `TRUST_PROXY` 时回环与私有网段的连接当作反代，不按地址分）；恢复接口先核对，只把核对不过的记进限流）；「设备」要求 `Authorization: Bearer <设备令牌>`；「管理者」要求设备令牌属于管理者。
 
 | 方法 | 路径 | 鉴权 | 用途 |
 | --- | --- | --- | --- |
