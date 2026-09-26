@@ -6,17 +6,18 @@ import { keyFromHex, keyToHex } from "./crypto";
 import {
   CONFLICT_KINDS,
   KNOWN_LIMIT,
+  PUBLISHED_DEVICES,
   emptyBase,
   type Conflict,
   type SyncBase,
 } from "./merge";
 export { syncDirectory } from "../local/files";
-export { KNOWN_LIMIT, emptyBase, type Conflict, type SyncBase } from "./merge";
+export { KNOWN_LIMIT, PUBLISHED_DEVICES, emptyBase, type Conflict, type SyncBase } from "./merge";
 /**
  * 家人一起写的本机状态，三个小 JSON，都在 documents/anan-v1/sync/ 下，都不进 Library
  * （备份里不该带着「我在哪台服务上、见过谁的清单」）；主密钥本体只在系统钥匙串。
  * - state.json：加没加入、钥匙指纹、上次同步、见过的清单、自动同步开关。
- * - base.json：上次同步后各共享实体的指纹与「已经见过的其他版本」，合并的三方之基。
+ * - base.json：上次同步后各共享实体的指纹、「已经见过的其他版本」与各台上次发布的根字段／人物，合并的三方之基。
  * - conflicts.json：两台手机都改过时输的那一版，书架冲突卡从这里读。
  */
 export type SyncSummary = {
@@ -215,6 +216,13 @@ export async function readBase(): Promise<SyncBase> {
     for (const [key, list] of Object.entries(parsed.known))
       if (Array.isArray(list) && list.every((v) => typeof v === "string"))
         base.known[key] = list.slice(-KNOWN_LIMIT);
+  // 各台上次发布的根字段与人物（旧文件没有）：坏的那台丢掉，下一轮它照旧只认 known。
+  if (parsed.published && typeof parsed.published === "object" && !Array.isArray(parsed.published)) {
+    const published: NonNullable<SyncBase["published"]> = {};
+    for (const [device, tags] of Object.entries(parsed.published).slice(0, PUBLISHED_DEVICES))
+      if (isStringMap(tags) && !Array.isArray(tags)) published[device] = { ...tags };
+    if (Object.keys(published).length) base.published = published;
+  }
   return base;
 }
 export function writeBase(base: SyncBase): void {

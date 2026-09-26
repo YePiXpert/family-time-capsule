@@ -223,6 +223,24 @@ it("reads the merge base back, drops malformed parts and caps known versions per
   put("base.json", JSON.stringify({ version: 2, merged: {}, known: {} }));
   expect(await state.readBase()).toEqual(state.emptyBase());
 });
+it("各台上次发布的根字段与人物：读回原样；旧文件没有这一项照常读；坏的那台丢掉、台数封顶", async () => {
+  const state = await load();
+  const published = { A: { "root:profile:name": "0123456789abcdef", "persons:p": "fedcba9876543210" } };
+  state.writeBase({ version: 1, merged: { root: { "profile:name": "c".repeat(64) } }, known: {}, published });
+  expect((await state.readBase()).published).toEqual(published);
+  put("base.json", JSON.stringify({ version: 1, merged: { records: { r: "fp" } }, known: {} }));
+  expect(await state.readBase()).toEqual({ version: 1, merged: { records: { r: "fp" } }, known: {} });
+  const many = Object.fromEntries(
+    Array.from({ length: state.PUBLISHED_DEVICES + 3 }, (_, i) => [`d${i}`, { "root:profile:name": "x" }]),
+  );
+  put("base.json", JSON.stringify({ version: 1, merged: {}, known: {}, published: { bad: { k: 1 }, list: ["x"], ...many } }));
+  const read = await state.readBase();
+  expect(read.published!.bad).toBeUndefined();
+  expect(read.published!.list).toBeUndefined();
+  expect(Object.keys(read.published!).length).toBeLessThanOrEqual(state.PUBLISHED_DEVICES);
+  put("base.json", JSON.stringify({ version: 1, merged: {}, known: {}, published: ["x"] }));
+  expect(await state.readBase()).toEqual(state.emptyBase());
+});
 it("keeps conflicts with their losing version and skips entries it cannot trust", async () => {
   const state = await load();
   expect(await state.readConflicts()).toEqual([]);

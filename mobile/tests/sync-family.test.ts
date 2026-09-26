@@ -1218,3 +1218,78 @@ it("清单没撤下（远端本来就没有）又没退成：不发回", async (
   ).rejects.toBe(error);
   expect(republish).not.toHaveBeenCalled();
 });
+it("名字、人物改了又改回、标上「第一次」又取消：经过远端与 base.json，另一台都跟上，之后不再来回", async () => {
+  const remote = fakeRemote();
+  const a = await phone();
+  const depsA = { transport: remote.client("A"), key };
+  await a.add("a", "她走了三步", "爸爸", false);
+  await a.store.change((s) => {
+    s.profile = { ...s.profile, name: "桉桉" };
+    s.persons = { ...s.persons, p: { id: "p", name: "奶奶" } };
+  });
+  await a.family.joinFamily(a.store, key, depsA);
+  const b = await phone();
+  const depsB = { transport: remote.client("B"), key };
+  await b.family.joinFamily(b.store, key, depsB);
+  a.activate();
+  await a.family.runFamilySync(a.store, depsA);
+  const change = async (name: string, person: string, first: boolean, at: string) => {
+    a.activate();
+    await a.store.change((s) => {
+      s.profile = { ...s.profile, name };
+      s.persons = { ...s.persons, p: { id: "p", name: person } };
+      a.model.patchRecord(s, "r-a", { first }, at);
+    });
+    await a.family.runFamilySync(a.store, depsA);
+    b.activate();
+    await b.family.runFamilySync(b.store, depsB);
+    const lib = b.store.get();
+    return [lib.profile.name, lib.persons.p?.name, lib.records["r-a"]?.first];
+  };
+  expect(await change("安安", "外婆", true, "2026-09-21T00:00:00.000Z")).toEqual(["安安", "外婆", true]);
+  expect(await change("桉桉", "奶奶", false, "2026-09-22T00:00:00.000Z")).toEqual(["桉桉", "奶奶", false]);
+  expect((await b.state.readBase()).published?.A).toBeDefined();
+  expect(await b.state.readConflicts()).toEqual([]);
+  for (const [p, deps] of [[a, depsA], [b, depsB], [a, depsA]] as const) {
+    p.activate();
+    const state = await p.family.runFamilySync(p.store, deps);
+    expect(state.lastSyncSummary!.pulled).toBe(0);
+  }
+  a.activate();
+  expect([a.store.get().profile.name, a.store.get().persons.p?.name]).toEqual(["桉桉", "奶奶"]);
+}, 30000);
+it("一台恢复了改名之前的备份：经过远端，它跟上家里现在的名字，旧名字不传回另一台", async () => {
+  const remote = fakeRemote();
+  const a = await phone();
+  const depsA = { transport: remote.client("A"), key };
+  await a.store.change((s) => {
+    s.profile = { ...s.profile, name: "桉桉" };
+    s.persons = { ...s.persons, p: { id: "p", name: "奶奶" } };
+  });
+  await a.family.joinFamily(a.store, key, depsA);
+  const b = await phone();
+  const depsB = { transport: remote.client("B"), key };
+  await b.family.joinFamily(b.store, key, depsB);
+  const backup = structuredClone(b.store.get());
+  a.activate();
+  await a.store.change((s) => {
+    s.profile = { ...s.profile, name: "安安" };
+    s.persons = { ...s.persons, p: { id: "p", name: "外婆" } };
+  });
+  await a.family.runFamilySync(a.store, depsA);
+  b.activate();
+  await b.family.runFamilySync(b.store, depsB);
+  // B 恢复备份：先清合并记录，再换库（BackupPages 的顺序）。
+  await b.state.forgetMergeHistory();
+  await b.store.change((s) => {
+    s.profile = backup.profile;
+    s.persons = backup.persons;
+  });
+  await b.family.runFamilySync(b.store, depsB);
+  expect([b.store.get().profile.name, b.store.get().persons.p?.name]).toEqual(["安安", "外婆"]);
+  for (const [p, deps] of [[a, depsA], [b, depsB], [a, depsA]] as const) {
+    p.activate();
+    await p.family.runFamilySync(p.store, deps);
+    expect([p.store.get().profile.name, p.store.get().persons.p?.name]).toEqual(["安安", "外婆"]);
+  }
+}, 30000);

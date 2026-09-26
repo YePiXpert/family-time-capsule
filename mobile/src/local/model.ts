@@ -217,14 +217,20 @@ export const TOMBSTONE_KINDS = [
 ] as const;
 export type TombstoneKind = (typeof TOMBSTONE_KINDS)[number];
 export const TOMBSTONE_KEY = /^(records|albums|series|letters|persons):[a-zA-Z0-9_-]{1,128}$/;
-/** 记一块墓碑；同一实体反复删只留最新的时刻。 */
+/**
+ * 记一块墓碑；同一实体反复删只留最新的时刻。删之前调用：时刻至少比被删那一版的 updatedAt 晚一毫秒——
+ * 那一版可能来自时钟快的手机，墓碑早于它，合并就压不住，删掉的东西会在别的手机上留着。
+ */
 export function tombstone(
   s: Library,
   kind: TombstoneKind,
   id: string,
   now: string,
 ): void {
-  s.tombstones = { ...s.tombstones, [`${kind}:${id}`]: now };
+  const entity = (s[kind] as Record<string, { updatedAt?: string }>)[id];
+  const after = entity?.updatedAt === undefined ? NaN : Date.parse(entity.updatedAt) + 1;
+  const at = after > Date.parse(now) ? new Date(after).toISOString() : now;
+  s.tombstones = { ...s.tombstones, [`${kind}:${id}`]: at };
 }
 export const emptyLibrary = (): Library => ({
   version: 1,
@@ -528,8 +534,8 @@ export function deletePerson(
   now = new Date().toISOString(),
 ): void {
   if (!s.persons[id]) throw new Error("没有这个人。");
-  delete s.persons[id];
   tombstone(s, "persons", id, now);
+  delete s.persons[id];
   retagPersons(s, id, (ids) => ids.filter((p) => p !== id));
 }
 
@@ -543,8 +549,8 @@ export function mergePersons(
   if (sourceId === targetId) throw new Error("请选择另一个人来合并。");
   if (!s.persons[sourceId] || !s.persons[targetId])
     throw new Error("没有这个人。");
-  delete s.persons[sourceId];
   tombstone(s, "persons", sourceId, now);
+  delete s.persons[sourceId];
   retagPersons(s, sourceId, (ids) => [
     ...new Set(ids.map((p) => (p === sourceId ? targetId : p))),
   ]);
@@ -688,8 +694,8 @@ export function deleteAlbum(
   now = new Date().toISOString(),
 ): void {
   if (!s.albums[id]) return;
-  delete s.albums[id];
   tombstone(s, "albums", id, now);
+  delete s.albums[id];
   for (const [key, q] of Object.entries(s.selections))
     if (q.albumId === id) delete s.selections[key];
 }
@@ -700,8 +706,8 @@ export function deleteSeries(
   now = new Date().toISOString(),
 ): void {
   if (!s.series[id]) return;
-  delete s.series[id];
   tombstone(s, "series", id, now);
+  delete s.series[id];
 }
 /** 删信：录音留给「清理未使用素材」。 */
 export function deleteLetter(
@@ -710,8 +716,8 @@ export function deleteLetter(
   now = new Date().toISOString(),
 ): void {
   if (!s.letters[id]) return;
-  delete s.letters[id];
   tombstone(s, "letters", id, now);
+  delete s.letters[id];
 }
 function clearUnavailableCovers(s: Library): void {
   for (const [key, album] of Object.entries(s.albums))

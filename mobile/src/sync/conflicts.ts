@@ -15,9 +15,28 @@ export function conflictMediaIds(conflicts: readonly Conflict[]): Set<string> {
   return ids;
 }
 
+/**
+ * 换回的这一版要在下一次合并里站得住：时刻不早于家里的删除（本机这块碑与卡上记的删除时刻都算）和库里现在那一版——
+ * 它们可能来自时钟快的手机，按本机「现在」存，一合并就又被删掉或判旧。同一刻不算被删（墓碑须晚于它）、也不算旧。
+ */
+function savedAt(lib: Library, c: Conflict, now: string): string {
+  const current = (lib[c.kind] as Record<string, { updatedAt: string }>)[c.entityId];
+  const after = Math.max(
+    Date.parse(now),
+    ...[
+      lib.tombstones?.[`${c.kind}:${c.entityId}`],
+      c.winner.deleted ? c.winner.updatedAt : undefined,
+      current?.updatedAt,
+    ]
+      .map((at) => (at === undefined ? NaN : Date.parse(at)))
+      .filter(Number.isFinite),
+  );
+  return after > Date.parse(now) ? new Date(after).toISOString() : now;
+}
 /** 留底作为刚写的新一版：实体与根字段都整个替换，不触碰冻结的旧值。 */
 export function restoreLoser(lib: Library, c: Conflict, now: string): void {
   const id = c.entityId;
+  const at = savedAt(lib, c, now);
   if (c.kind === "records") {
     const loser = c.loser as LocalRecord;
     const mediaIds = loser.mediaIds.filter((id) => lib.media[id]);
@@ -37,7 +56,7 @@ export function restoreLoser(lib: Library, c: Conflict, now: string): void {
       ...(lib.records[id]
         ? { ancestors: lineage(lib.records[id]) }
         : loser.ancestors ? { ancestors: [...loser.ancestors] } : {}),
-      updatedAt: now,
+      updatedAt: at,
     };
   } else if (c.kind === "letters") {
     const loser = c.loser as LocalLetter;
@@ -56,7 +75,7 @@ export function restoreLoser(lib: Library, c: Conflict, now: string): void {
       ...(lib.letters[id]
         ? { ancestors: lineage(lib.letters[id]) }
         : loser.ancestors ? { ancestors: [...loser.ancestors] } : {}),
-      updatedAt: now,
+      updatedAt: at,
     };
   } else {
     throw new Error("不认识的冲突。");
