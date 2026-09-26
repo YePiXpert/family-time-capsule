@@ -15,8 +15,8 @@ import {
 } from "expo-audio";
 import { File, Paths } from "expo-file-system";
 import { preserveMedia, verifyMedia } from "./files";
-import { now, updateDraft } from "./services";
-import type { LocalMedia, RecordDraft } from "./model";
+import { now } from "./services";
+import { updateDraft, type LocalMedia, type RecordDraft } from "./model";
 import type { LocalStore } from "./store";
 import { messageOf } from "./ui";
 
@@ -43,13 +43,26 @@ export function useDraftPersist(
     const originals = Object.values(pendingMedia.current);
     const job = store.change((s) => {
       for (const m of originals) s.media[m.id] = m;
-      updateDraft(s, current.current!);
+      const stored = updateDraft(s, current.current!);
+      // 库里的原记录／基准版本变了（同步救下了草稿）：手里这份跟上，标题与放弃提示照新的说。
+      const d = current.current;
+      if (
+        d &&
+        (d.recordId !== stored.recordId || d.baseRevision !== stored.baseRevision)
+      ) {
+        current.current = {
+          ...d,
+          recordId: stored.recordId,
+          baseRevision: stored.baseRevision,
+        };
+        onLocal(current.current);
+      }
     });
     void job.catch((e) => {
       if (mounted.current) onError(messageOf(e));
     });
     return job;
-  }, [store, onError]);
+  }, [store, onError, onLocal]);
   const persist = useCallback(
     (next: RecordDraft, media: LocalMedia[] = []) => {
       current.current = next;

@@ -19,9 +19,7 @@ import {
   LETTER_FROM_LIMIT,
   newAlbumFrom,
   referencedMedia,
-  type Library,
   type MediaKind,
-  type LocalLetter,
   type LocalMedia,
   type LocalRecord,
   type Mutable,
@@ -60,10 +58,6 @@ export async function beginDraft(
     };
     return id;
   });
-}
-export function updateDraft(s: Library, draft: RecordDraft) {
-  if (!s.drafts[draft.id]) throw new Error("草稿已关闭，请重新打开。");
-  s.drafts[draft.id] = clone(draft);
 }
 export async function beginSelection(
   store: LocalStore,
@@ -149,13 +143,6 @@ export async function beginLetter(store: LocalStore, from = "") {
     };
     return id;
   });
-}
-/** 草稿信整体替换；封存后的信不能再改。 */
-export function updateLetter(s: Library, letter: Stored<LocalLetter>) {
-  const existing = s.letters[letter.id];
-  if (!existing) throw new Error("这封信已删除。");
-  if (existing.sealed) throw new Error("信已封存，不能再改。");
-  s.letters[letter.id] = { ...clone(letter), ancestors: lineage(existing) };
 }
 export async function sealLetter(store: LocalStore, id: string) {
   await store.change((s) => {

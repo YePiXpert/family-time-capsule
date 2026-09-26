@@ -563,6 +563,21 @@ export function referencedMedia(s: Library): Set<string> {
     ...Object.values(s.letters).flatMap((l) => l.mediaIds),
   ]);
 }
+/**
+ * 编辑页写回草稿；返回库里的这一份。原记录与基准版本归库管：同步把被删记录的草稿改成新记录、
+ * 阅读页改记录时跟上基准版本，编辑页手里的旧值不能写回去，否则保存一直被「原记录已改变」拦住。
+ */
+export function updateDraft(s: Library, draft: RecordDraft): RecordDraft {
+  const existing = s.drafts[draft.id];
+  if (!existing) throw new Error("草稿已关闭，请重新打开。");
+  const next = {
+    ...clone(draft),
+    recordId: existing.recordId,
+    baseRevision: existing.baseRevision,
+  };
+  s.drafts[draft.id] = next;
+  return next;
+}
 export function saveRecord(
   s: Library,
   draftId: string,

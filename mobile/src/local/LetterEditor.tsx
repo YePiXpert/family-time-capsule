@@ -19,7 +19,8 @@ import { PermissionDenied, useRecorder } from "./editorHooks";
 import { ExitGate } from "./exitGate";
 import { isEmptyLetter } from "./empties";
 import { toDayKey } from "./dates";
-import { openAtLabel, PAST_OPEN_AT } from "./letters";
+import { openAtLabel, PAST_OPEN_AT, writeLetter } from "./letters";
+import { contentHashOf } from "./hash";
 import {
   LETTER_FROM_LIMIT,
   LETTER_TEXT_LIMIT,
@@ -29,7 +30,7 @@ import {
   type Stored,
 } from "./model";
 import type { Props } from "./navigation";
-import { deleteLetter, now, sealLetter, updateLetter } from "./services";
+import { deleteLetter, newId, now, sealLetter } from "./services";
 import {
   BottomBar,
   Button,
@@ -65,6 +66,7 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
     : undefined;
   const [draft, setDraft] = useState(initial),
     [error, setError] = useState(""),
+    [notice, setNotice] = useState(""),
     [permDenied, setPermDenied] = useState(false),
     [busy, setBusy] = useState(false),
     [dateOpen, setDateOpen] = useState(false),
@@ -74,6 +76,8 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
       {},
     );
   const current = useRef(initial),
+    // 编辑页这一份的来源版本：打开时的、上次写下的或从家里并进来的。落盘的世系记它（见 writeLetter）。
+    base = useRef(stored),
     pendingMedia = useRef<Record<string, LocalMedia>>({}),
     verified = useRef<Set<string>>(new Set()),
     writeTimer = useRef<ReturnType<typeof setTimeout> | null>(null),
@@ -83,11 +87,26 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
     [exits] = useState(() => new ExitGate());
   const writeNow = useCallback(() => {
     const d = current.current;
-    if (!d) return Promise.resolve();
+    if (!d || !base.current) return Promise.resolve();
     const originals = Object.values(pendingMedia.current);
     const job = store.change((lib) => {
       for (const m of originals) lib.media[m.id] = m;
-      updateLetter(lib, d.letter);
+      // 按队列里的最新来源写：前一次落盘可能刚把这封信另存成了新信。
+      const from = base.current!;
+      const written = writeLetter(lib, { ...d.letter, id: from.id }, from, newId);
+      if (!written) return;
+      base.current = written;
+      if (written.id !== d.letter.id && current.current) {
+        // 原信在别的手机被删或封存：之后的改动、封存、删除都落到另存的这封新信上。
+        current.current = {
+          ...current.current,
+          letter: { ...current.current.letter, id: written.id },
+        };
+        if (mounted.current) {
+          setDraft(current.current);
+          setNotice("这封信在另一台手机上被删除或封存了，你写的字已另存为一封新信。");
+        }
+      }
     });
     void job.catch((e) => {
       if (mounted.current) setError(messageOf(e));
@@ -132,6 +151,24 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
     },
     [writeNow],
   );
+  // 开着写信页时同步并进了家里对这封信的改动：这边没有还没落盘的字，就换成新的一版接着写。
+  // 有没落盘的字就留着自己的，下次落盘与那一版并发，由对方手机出冲突卡。
+  useEffect(() => {
+    const from = base.current,
+      d = current.current;
+    if (!stored || !from || !d || stored === from || stored.id !== from.id)
+      return;
+    if (contentHashOf(stored) === contentHashOf(from)) {
+      base.current = stored;
+      return;
+    }
+    if (stored.sealed || writeTimer.current || operation.current) return;
+    if (d.recordingFile || contentHashOf(d.letter) !== contentHashOf(from))
+      return;
+    base.current = stored;
+    current.current = { ...d, letter: stored };
+    setDraft(current.current);
+  }, [stored]);
   const {
     recording,
     start: startRecording,
@@ -276,13 +313,15 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
           onPress: () => {
             void run(async () => {
               await flush();
-              await sealLetter(store, letter.id);
-              // 封存后这份草稿不再写回：任何迟到的落盘都会被「信已封存」拒绝。
+              // 落盘可能刚把信另存成新信（原信在别的手机被删或封存）：封的是库里这一封。
+              const id = base.current?.id ?? letter.id;
+              await sealLetter(store, id);
+              // 封存后这份草稿不再写回。
               current.current = undefined;
               // 写入成功之后才给成功触感与落印；封存失败走 run 的错误提示，什么都不播。
               hapticSuccess();
               await leave(() =>
-                navigation.replace("Letter", { id: letter.id, sealed: true }),
+                navigation.replace("Letter", { id, sealed: true }),
               );
             });
           },
@@ -300,7 +339,7 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
           void run(async () => {
             if (current.current?.recordingFile) await discardAudio();
             current.current = undefined;
-            await deleteLetter(store, letter.id);
+            await deleteLetter(store, base.current?.id ?? letter.id);
             await leave(() => navigation.goBack());
           });
         },
@@ -573,6 +612,7 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
                 />
               </View>
             ))}
+            {!!notice && <Text style={s.muted}>{notice}</Text>}
             {!!error && (
               <View style={{ paddingBottom: 4 }}>
                 <ErrorText message={error} />
