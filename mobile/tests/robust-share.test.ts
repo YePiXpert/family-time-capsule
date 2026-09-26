@@ -183,3 +183,22 @@ it("does not leave unreferenced copies in media/ when two receive passes overlap
   // touching the library, and never deletes the originals it just copied.
   expect(onDisk.filter((name) => !referenced.has(name))).toEqual([]);
 });
+it("草稿已落库后界面监听抛错：分享照样收下、确认，照片文件留着", async () => {
+  const { store, files } = await open();
+  const { receiveShares } = await import("../src/local/services");
+  queueShare("44444444-4444-4444-8444-444444444444", "listener.jpg", Buffer.alloc(4096, 5));
+  let armed = true;
+  const unsubscribe = store.subscribe(() => {
+    if (armed) { armed = false; throw new Error("listener blew up"); }
+  });
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  await receiveShares(store);
+  unsubscribe();
+  expect(armed).toBe(false);
+  const drafts = Object.values(store.get().drafts);
+  expect(drafts).toHaveLength(1);
+  // 以前 change 在这里失败，出错分支把草稿正引用着的照片删了，也没确认这份分享。
+  for (const id of drafts[0]!.content.mediaIds)
+    expect(files.mediaFile(store.get().media[id]!).exists).toBe(true);
+  expect(env.acknowledged).toEqual(["44444444-4444-4444-8444-444444444444"]);
+});

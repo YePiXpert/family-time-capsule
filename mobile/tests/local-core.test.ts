@@ -1,8 +1,9 @@
 import { contentHashOf } from "../src/local/hash";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  clipText,
   clone,
   deleteAlbum,
   deleteLetter,
@@ -23,6 +24,7 @@ import {
   patchRecord,
   compareDates,
   recordsOfPerson,
+  recordTitle,
   referencedMedia,
   saveRecord,
   validateChange,
@@ -295,6 +297,30 @@ describe("serialized durable state", () => {
     await reopened.open();
     expect(reopened.get().profile.name).toBe("宝宝");
     expect(reopened.get().welcome).toBe(true);
+  });
+  it("监听或健康统计抛错不让已落盘的改动失败：change 照样返回，其余监听照常通知，错误只记下", async () => {
+    let disk = emptyLibrary();
+    const store = new LocalStore(
+      { read: async () => disk, write: async (s) => { disk = clone(s); } },
+      { onChange: () => { throw new Error("health broke"); } },
+    );
+    await store.open();
+    const heard: string[] = [];
+    store.subscribe(() => { heard.push("前"); throw new Error("listener blew up"); });
+    store.subscribe(() => { heard.push("后"); });
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await expect(store.change((s) => { s.profile.name = "宝宝"; return 7; })).resolves.toBe(7);
+      expect(error).toHaveBeenCalledTimes(2);
+      expect(heard).toEqual(["前", "后"]);
+      expect(store.get().profile.name).toBe("宝宝");
+      expect(disk.profile.name).toBe("宝宝");
+      // 队列没被卡住。
+      await store.change((s) => { s.welcome = true; });
+      expect(disk.welcome).toBe(true);
+    } finally {
+      error.mockRestore();
+    }
   });
   it("never overwrites an unreadable database with an empty library", async () => {
     let writes = 0;
@@ -1370,5 +1396,27 @@ describe("legacy grouped drafts", () => {
     }
     expect(s.drafts.draft!.aiJob).toEqual(job);
     expect(s.drafts.draft!.aiProposal?.writingMode).toBe("polish");
+  });
+});
+describe("截断不劈开表情", () => {
+  it("没写标题时取的前 40 个字按码点数，结尾不会是半个表情", () => {
+    const text = `${"今".repeat(39)}😀后面还有`;
+    const title = recordTitle({ ...emptyContent(), text });
+    expect(title).toBe(`${"今".repeat(39)}😀`);
+    expect(title.isWellFormed()).toBe(true);
+    expect(recordTitle({ ...emptyContent(), text: "😀".repeat(50) })).toBe("😀".repeat(40));
+    expect(recordTitle({ ...emptyContent(), text: "  " })).toBe("这一刻");
+  });
+  it("clipText 按 UTF-16 单位封顶（校验按 .length 计），落在代理对中间时少留一个单位", () => {
+    expect(clipText("😀😀", 3)).toBe("😀");
+    expect(clipText("a😀", 2)).toBe("a");
+    expect(clipText("ab😀", 4)).toBe("ab😀");
+    expect(clipText("字字字", 2)).toBe("字字");
+    expect(clipText("字", 0)).toBe("");
+    for (let max = 0; max < 12; max++) {
+      const clipped = clipText("a😀b😀😀c", max);
+      expect(clipped.length).toBeLessThanOrEqual(max);
+      expect(clipped.isWellFormed()).toBe(true);
+    }
   });
 });

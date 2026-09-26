@@ -166,7 +166,7 @@ beforeEach(() => {
   for (const uri of PICKED) env.disk.add(uri);
   picker.mockResolvedValue({ canceled: false, assets: PICKED.map((uri) => ({ uri })) } as never);
   inspect.mockResolvedValue(inside as never);
-  restoreBackup.mockResolvedValue(new env.File("backups/恢复前.xmb") as never);
+  restoreBackup.mockResolvedValue({ prior: new env.File("backups/恢复前.xmb"), skipped: 0 } as never);
 });
 
 // #10 恢复与恢复前检查不能停止
@@ -211,6 +211,14 @@ it("#11 恢复成功后删掉选择器副本", async () => {
   expect(restoreBackup).toHaveBeenCalledOnce();
   expect(pickedUris(discard.mock.calls[0])).toEqual(PICKED);
   expect(env.slots[MESSAGE]).toBe("恢复完成。恢复前的内容也留了一份在下面。");
+});
+it("恢复前就找不到原件的照片没放进「恢复前」那份：结果行说明有几个", async () => {
+  restoreBackup.mockResolvedValueOnce({ prior: new env.File("backups/恢复前.xmb"), skipped: 2 } as never);
+  await pickFromFiles();
+  await confirmRestore();
+  expect(env.slots[MESSAGE]).toBe(
+    "恢复完成。恢复前的内容也留了一份在下面。有 2 个照片或录音在恢复前就已找不到原件，「恢复前」那份备份里没有它们。",
+  );
 });
 it("#11 确认框点取消也删掉选择器副本，不恢复", async () => {
   await pickFromFiles();

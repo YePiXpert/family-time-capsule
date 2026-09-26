@@ -12,6 +12,7 @@ import {
 import {
   appendToAlbum,
   clone,
+  clipText,
   deleteAlbum as removeAlbum,
   deleteLetter as removeLetter,
   editEntity,
@@ -133,7 +134,7 @@ export async function beginLetter(store: LocalStore, from = "") {
       id,
       title: "",
       text: "",
-      from: from.trim().slice(0, LETTER_FROM_LIMIT),
+      from: clipText(from.trim(), LETTER_FROM_LIMIT),
       openAt: defaultOpenAt(s.profile.birthday),
       writtenAt: at,
       sealed: false,
@@ -181,7 +182,7 @@ export async function renamePerson(
   await store.change((s) => {
     const person = s.persons[id];
     if (!person) throw new Error("没有这个人。");
-    const trimmed = name.trim().slice(0, 50);
+    const trimmed = clipText(name.trim(), 50);
     if (!trimmed) throw new Error("名字不能是空的。");
     editEntity(s, "persons", id, (p) => {
       p.name = trimmed;
@@ -191,7 +192,7 @@ export async function renamePerson(
 /** 新建人物（同名复用既有 id），供编辑器人物 chips 调用。 */
 export async function createPerson(store: LocalStore, name: string) {
   return store.change((s) => {
-    const trimmed = name.trim().slice(0, 50);
+    const trimmed = clipText(name.trim(), 50);
     if (!trimmed) throw new Error("先写上名字。");
     const existing = Object.values(s.persons).find((p) => p.name === trimmed);
     if (existing) return existing.id;

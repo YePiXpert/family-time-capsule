@@ -23,6 +23,14 @@ export interface StoreEvents {
   onChange?: (ms: number) => void;
   onWriteFailure?: (message: string) => void;
 }
+/** 改动已经落盘之后的通知：出错只记下，不让这次 change 失败。 */
+function notify(fn: () => void): void {
+  try {
+    fn();
+  } catch (e) {
+    console.error("本机资料已保存，但通知界面时出错：", e);
+  }
+}
 /** All mutations, including restore, use one queue. A failed write never advances UI state. */
 export class LocalStore {
   private state: Library = emptyLibrary();
@@ -98,8 +106,11 @@ export class LocalStore {
       }
       freezeChanged(state, delta);
       this.state = state;
-      for (const fn of this.listeners) fn();
-      this.events.onChange?.(Date.now() - started);
+      // 已经落盘并换上：这次改动就是成功了。监听或健康统计出错只报告、不外抛，
+      // 否则调用方会把已生效的改动当失败，删掉库里正引用着的文件；其余监听也照常通知。
+      // 不用 setTimeout 重新抛出：RN 正式包里那会直接让应用崩溃。
+      for (const fn of this.listeners) notify(fn);
+      notify(() => this.events.onChange?.(Date.now() - started));
       return result;
     });
     this.queue = next.catch(() => {});

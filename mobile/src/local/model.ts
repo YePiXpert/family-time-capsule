@@ -421,10 +421,21 @@ export function freezeChanged(s: Library, delta: LibraryDelta): void {
     freezeEntity((s[kind] as Record<string, unknown>)[id]);
   for (const kind of ENTITY_KINDS) Object.freeze(s[kind]);
 }
+/** 没写标题时取正文第一行的前 40 个字；按码点数，表情不会被劈成半个。 */
 export function recordTitle(r: Stored<RecordContent>): string {
-  return (
-    r.title.trim() || r.text.trim().split("\n")[0]?.slice(0, 40) || "这一刻"
-  );
+  const line = r.text.trim().split("\n")[0] ?? "";
+  // 40 个码点至多 80 个 UTF-16 单位：先截 80 再按码点数，长正文不必整行展开成数组。
+  return r.title.trim() || Array.from(line.slice(0, 80)).slice(0, 40).join("") || "这一刻";
+}
+/**
+ * 按上限截断：最多 max 个 UTF-16 单位（校验与服务端都按 .length 计），但不把表情这类代理对劈成两半，
+ * 否则存下或发出去的就是半个字符。
+ */
+export function clipText(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const end = Math.max(0, max);
+  const code = text.charCodeAt(end - 1);
+  return text.slice(0, code >= 0xd800 && code <= 0xdbff ? end - 1 : end);
 }
 export function monthKey(date: string): string {
   const d = new Date(date);

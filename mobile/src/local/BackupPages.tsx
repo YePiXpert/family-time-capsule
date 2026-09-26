@@ -75,6 +75,32 @@ export function Storage() {
       off();
     };
   }, []);
+  /**
+   * 占住本机互斥再清：同步会把新的冲突写进留底，留底那一版引用的照片不能在读完留底、
+   * 清理落库之间被当成没用到的删掉。自动同步看到本机忙就等这一步做完。
+   */
+  const clean = async () => {
+    if (isSyncRunning()) {
+      setMessage("正在与家人同步，等它完成再试。");
+      return;
+    }
+    if (isLocalBusy()) {
+      setMessage("上一个操作还没结束，等它完成再试。");
+      return;
+    }
+    markLocalBusy(true);
+    try {
+      const n = await collectUnusedMedia(
+        store,
+        conflictMediaIds(await readConflicts()),
+      );
+      setMessage(`已清理 ${(n / 1048576).toFixed(1)} MB`);
+    } catch (e) {
+      setMessage(messageOf(e));
+    } finally {
+      markLocalBusy(false);
+    }
+  };
   const health = healthFile().get();
   const refs = referencedMedia(state);
   const bytes = Object.values(state.media).reduce((n, m) => n + m.bytes, 0),
@@ -103,16 +129,7 @@ export function Storage() {
               { text: "取消", style: "cancel" },
               {
                 text: "清理",
-                onPress: () => {
-                  void readConflicts()
-                    .then((conflicts) =>
-                      collectUnusedMedia(store, conflictMediaIds(conflicts)),
-                    )
-                    .then((n) =>
-                      setMessage(`已清理 ${(n / 1048576).toFixed(1)} MB`),
-                    )
-                    .catch((e) => setMessage(messageOf(e)));
-                },
+                onPress: () => void clean(),
               },
             ],
           )
@@ -267,20 +284,25 @@ function useBackupActions() {
           style: "destructive",
           onPress: () => {
             void perform(async () => {
+              let skipped = 0;
               try {
-                await restoreBackup(
+                ({ skipped } = await restoreBackup(
                   store,
                   files,
                   setMessage,
                   stoppable(),
                   conflictMediaIds(await readConflicts()),
-                );
+                ));
               } finally {
                 discardPickedCopies(files);
               }
               // 一起写的手机：下一轮把全家的清单重读一遍，把备份之后家人的改动并回来。
               await forgetMergeHistory();
-              setMessage(done);
+              setMessage(
+                skipped
+                  ? `${done}有 ${skipped} 个照片或录音在恢复前就已找不到原件，「恢复前」那份备份里没有它们。`
+                  : done,
+              );
             }).then((ran) => {
               // 同步刚好开始、没执行：选择器复制进缓存的那份也不留着。
               if (!ran) discardPickedCopies(files);

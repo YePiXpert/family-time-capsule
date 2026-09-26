@@ -53,11 +53,16 @@ export class BackupStopped extends Error {
     this.name = "BackupStopped";
   }
 }
+/** 素材原件不在、长度或内容不对：只有「恢复前」那份会跳过它，别的错（空间不足等）照常失败。 */
+class MediaMissing extends Error {}
 const stampOf = (at: Date) => {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${at.getFullYear()}${pad(at.getMonth() + 1)}${pad(at.getDate())}-${pad(at.getHours())}${pad(at.getMinutes())}`;
 };
-/** 名字里的 YYYYMMDD-HHMM 段就是创建顺序；前缀改过名，所以不能拿整个文件名比大小。 */
+/**
+ * 名字里的 YYYYMMDD-HHMM 是创建时手机的本地时间：只用来显示，以及清理半成品、钉子这种按天、按小时的粗算。
+ * 保留备份谁新谁旧看 meta 里的 UTC createdAt（见 createdAtOf）：往西飞、夏令时回拨后本地时间会倒退。
+ */
 export function backupFileName(at: Date, id: string, ext = "xmb"): string {
   return `${BACKUP_PREFIX}-${stampOf(at)}-${id}.${ext}`;
 }
@@ -86,6 +91,31 @@ export function backupStampLabel(
 }
 /** 备份名里的时间戳；取不到的（外部改过名的文件）排到最后。 */
 const backupStamp = (name: string) => name.match(/-(\d{8}-\d{4})-/)?.[1] ?? "";
+/** 保留备份写好后不再改；按名字与大小记住读出的时刻，列表、清理、回收不必每次都把 meta 重读一遍。 */
+const createdAtCache = new Map<string, number>();
+/**
+ * 一份保留备份的创建时刻（毫秒）：v2／v3 读 meta 里的 UTC createdAt；读不出的（Build 62 及更早的整份、
+ * 坏文件）退回名字里的本地时间；名字里也没有的排到最后。
+ */
+function createdAtOf(file: File): number {
+  const key = `${file.name}:${file.size}`;
+  const cached = createdAtCache.get(key);
+  if (cached !== undefined) return cached;
+  let at = Number.NaN;
+  try {
+    at = Date.parse(peekMeta(file).meta.createdAt);
+  } catch {
+    // 退回名字；不记住，下次再读一遍。
+  }
+  if (Number.isFinite(at)) {
+    createdAtCache.set(key, at);
+    return at;
+  }
+  const m = backupStamp(file.name).match(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})$/);
+  return m
+    ? new Date(+m[1]!, +m[2]! - 1, +m[3]!, +m[4]!, +m[5]!).getTime()
+    : Number.NEGATIVE_INFINITY;
+}
 /** 应用内保留的备份：Build 70 起是 .xmbm 清单备份，之前是整份 .xmb；两种都认。 */
 export const isRetainedBackup = (name: string) => /\.xmbm?$/.test(name);
 /** Calendar days since the last export; null when there has never been a valid one. */
@@ -103,17 +133,16 @@ export function daysSinceExport(
   // 时钟曾经拨快过：将来的日子不算数，当作没备份过，提醒照常出现。
   return days < 0 ? null : days;
 }
-/** 应用内保留的备份，最新的在前。 */
+/** 应用内保留的备份，最新的在前（按 createdAtOf）。 */
 export function retainedBackups(): File[] {
   if (!backupDirectory.exists) return [];
-  return backupDirectory
+  const files = backupDirectory
     .list()
-    .filter((f): f is File => f instanceof File && isRetainedBackup(f.name))
-    .sort(
-      (a, b) =>
-        backupStamp(b.name).localeCompare(backupStamp(a.name)) ||
-        b.name.localeCompare(a.name),
-    );
+    .filter((f): f is File => f instanceof File && isRetainedBackup(f.name));
+  const at = new Map(files.map((f) => [f, createdAtOf(f)]));
+  return files.sort(
+    (a, b) => at.get(b)! - at.get(a)! || b.name.localeCompare(a.name),
+  );
 }
 /** 远端恢复留下的钉子（见 restorePinName）。 */
 export function restorePins(): File[] {
@@ -131,8 +160,8 @@ export function pruneBackups(keep = 3, protect: File | File[] = []): void {
     (Array.isArray(protect) ? protect : [protect]).map((f) => f.uri),
   );
   const others = retainedBackups().filter((f) => !shielded.has(f.uri));
-  // 同一分钟内名字的字典序不等于创建顺序，因此给刚创建的这份预留一个保留位，
-  // 再按名字清掉最旧的其余备份。
+  // 两份的创建时刻可能读不出或相同（退回名字时只到分钟），因此给刚创建的这份预留一个保留位，
+  // 再清掉最旧的其余备份。
   const doomed = shielded.size ? others.slice(keep - 1) : others.slice(keep);
   for (const file of doomed) if (file.exists) file.delete();
   // 七天前的钉子：那次远端恢复没有再继续，别让它永远护着一堆没人要的 blob。
@@ -175,7 +204,7 @@ export async function ensureBlob(
   const source = mediaFile(m as LocalMedia);
   // 文件不在或长度对不上，先给一句人话，再谈哈希。
   if (!source.exists || source.size !== blob.bytes)
-    throw new Error(`素材缺失或损坏：${m.name}`);
+    throw new MediaMissing(`素材缺失或损坏：${m.name}`);
   blobPrefixDirectory(blob.sha256).create({
     intermediates: true,
     idempotent: true,
@@ -199,7 +228,7 @@ export async function ensureBlob(
       output.close();
       input.close();
     }
-    if (hash !== blob.sha256) throw new Error(`素材缺失或损坏：${m.name}`);
+    if (hash !== blob.sha256) throw new MediaMissing(`素材缺失或损坏：${m.name}`);
     if (target.exists) target.delete();
     await part.move(target, { overwrite: false });
     return true;
@@ -217,27 +246,37 @@ export async function createBackup(
   onProgress?: RestoreProgress,
   signal?: AbortSignal,
 ): Promise<File> {
-  return writeManifest(state, onProgress, signal);
+  const { out } = await writeManifest(state, false, onProgress, signal);
+  // 收拾失败不影响已经写好、核对过的备份。
+  tidyBackups([out]);
+  return out;
 }
 /**
- * createBackup 的本体；protect 里的保留备份这一轮不清（恢复时先备份当前内容，不能把正要恢复的那份清掉）。
- * 恢复用的「恢复前」那份不在这里收拾（prune = false）：恢复成功才让最旧的让位，失败或停止不挤掉别的恢复记录。
+ * 新写一份保留备份，不收拾旧份。自己点的备份（lenient = false）缺一张照片就整份失败：
+ * 存到外面的备份悄悄少了照片，比备份失败更糟。恢复用的「恢复前」那份（lenient = true）
+ * 跳过原件已经不在或坏了的素材，返回跳过了几个——一张丢了的照片不该挡住恢复一份好备份；
+ * 它也不在这里收拾：恢复成功才让最旧的让位，失败或停止不挤掉别的恢复记录，也不会清掉正要恢复的那份。
  */
 async function writeManifest(
   state: Library,
+  lenient: boolean,
   onProgress?: RestoreProgress,
   signal?: AbortSignal,
-  protect: File[] = [],
-  prune = true,
-): Promise<File> {
+): Promise<{ out: File; skipped: number }> {
   const out = new File(
     backupDirectory,
     backupFileName(new Date(), randomUUID().slice(0, 8), "xmbm"),
   );
-  await writeManifestTo(state, out, backupDirectory, false, onProgress, signal);
-  // 收拾失败不影响已经写好、核对过的备份。
-  if (prune) tidyBackups([out, ...protect]);
-  return out;
+  const skipped = await writeManifestTo(
+    state,
+    out,
+    backupDirectory,
+    false,
+    onProgress,
+    signal,
+    lenient,
+  );
+  return { out, skipped };
 }
 /**
  * 录到一半的录音是这台手机上的临时文件，不属于库：草稿照备，只是不带它。
@@ -270,7 +309,10 @@ export async function createSyncManifest(
   }
   return out;
 }
-/** 两种清单共用素材入库、实体编码、半成品写入与读回校验。 */
+/**
+ * 两种清单共用素材入库、实体编码、半成品写入与读回校验。
+ * lenient 时原件不在或坏了的素材连同指向它们的引用一起不写（见 withoutMedia），返回去掉了几个。
+ */
 async function writeManifestTo(
   state: Library,
   out: File,
@@ -278,14 +320,20 @@ async function writeManifestTo(
   overwrite: boolean,
   onProgress?: RestoreProgress,
   signal?: AbortSignal,
-): Promise<void> {
+  lenient = false,
+): Promise<number> {
   if (signal?.aborted) throw new BackupStopped();
   ensureDirectories();
   state = withoutPendingRecordings(state);
-  const entities = encodeEntities(state);
-  const head = encodeMetaV2(state, entities.length, entityCount(state), {
-    magic: BACKUP_MAGIC_V3,
-  });
+  const encode = (lib: Library) => {
+    const entities = encodeEntities(lib);
+    const head = encodeMetaV2(lib, entities.length, entityCount(lib), {
+      magic: BACKUP_MAGIC_V3,
+    });
+    return { entities, head };
+  };
+  // 先编码一遍：库本身不对就在复制照片之前失败。
+  let { entities, head } = encode(state);
   const owners = blobOwners(state);
   const blobs = backupBlobs(state);
   // 第一次做清单备份要把整个素材库复制一份进 blob 库：空间不够先说清楚，一个字节都不写。
@@ -296,10 +344,22 @@ async function writeManifestTo(
     }, 0),
   );
   let done = 0;
+  const missing = new Set<string>();
   for (const blob of blobs) {
     if (signal?.aborted) throw new BackupStopped();
-    await ensureBlob(owners.get(blob.sha256)!, blob);
+    try {
+      await ensureBlob(owners.get(blob.sha256)!, blob);
+    } catch (e) {
+      if (!lenient || !(e instanceof MediaMissing)) throw e;
+      missing.add(blob.sha256);
+    }
     onProgress?.(`正在整理照片 ${++done}/${blobs.length}`);
+  }
+  let skipped = 0;
+  if (missing.size) {
+    const left = withoutMedia(state, missing);
+    skipped = Object.keys(state.media).length - Object.keys(left.media).length;
+    ({ entities, head } = encode(left));
   }
   if (signal?.aborted) throw new BackupStopped();
   // 被系统中断时只留下半成品，不进入保留列表，也不阻塞 blob 回收。
@@ -321,6 +381,55 @@ async function writeManifestTo(
     if (part.exists) part.delete();
     throw e;
   }
+  return skipped;
+}
+/**
+ * 去掉这些字节对应的素材，连同指向它们的引用（附件、封面、系列、头像）：剩下的库照样过校验，
+ * 清单里的 blob 与素材一一对应，这份备份照常能恢复。只给「恢复前」那份用，不动传进来的库。
+ */
+function withoutMedia(state: Library, gone: ReadonlySet<string>): Library {
+  const ids = new Set(
+    Object.values(state.media)
+      .filter((m) => gone.has(m.sha256))
+      .map((m) => m.id),
+  );
+  const each = <T,>(map: Record<string, T>, fn: (v: T) => T) =>
+    Object.fromEntries(Object.entries(map).map(([k, v]) => [k, fn(v)]));
+  const content = <T extends { mediaIds: readonly string[]; coverId: string | null }>(
+    c: T,
+  ): T =>
+    c.mediaIds.some((id) => ids.has(id))
+      ? {
+          ...c,
+          mediaIds: c.mediaIds.filter((id) => !ids.has(id)),
+          coverId: c.coverId && ids.has(c.coverId) ? null : c.coverId,
+        }
+      : c;
+  const cover = <T extends { coverId: string | null }>(v: T): T =>
+    v.coverId && ids.has(v.coverId) ? { ...v, coverId: null } : v;
+  return {
+    ...state,
+    media: Object.fromEntries(
+      Object.entries(state.media).filter(([id]) => !ids.has(id)),
+    ),
+    records: each(state.records, content),
+    drafts: each(state.drafts, (d) => {
+      const c = content(d.content);
+      return c === d.content ? d : { ...d, content: c };
+    }),
+    letters: each(state.letters, content),
+    albums: each(state.albums, cover),
+    selections: each(state.selections, cover),
+    series: each(state.series, (v) =>
+      v.items.some((i) => ids.has(i.mediaId))
+        ? { ...v, items: v.items.filter((i) => !ids.has(i.mediaId)) }
+        : v,
+    ),
+    profile:
+      state.profile.avatarId && ids.has(state.profile.avatarId)
+        ? { ...state.profile, avatarId: null }
+        : state.profile,
+  };
 }
 /** 清旧份 + 回收 blob；失败吞掉——备份或恢复本身已经完成，下次再收拾。 */
 function tidyBackups(protect: File[]): void {
@@ -822,6 +931,8 @@ async function rebuildThumbs(
     onProgress?.(`正在重建缩略图 ${++done}/${pending.length}`);
   }
 }
+/** prior 是「恢复前」那份；skipped 是原件已经不在或坏了、没能放进它的照片和录音个数。 */
+export type RestoreResult = { prior: File; skipped: number };
 /**
  * 解包、校验与重建缩略图都在写队列之外做——这几步会读写整库的素材，扣着写队列
  * 就是把界面连同自动保存一起卡住，而且没有任何进度。全部准备好之后，只用一次很短
@@ -838,12 +949,17 @@ export async function restoreBackup(
   signal?: AbortSignal,
   /** 冲突留底版引用的素材：备份里没有也留着，「用这一版」才不丢图。 */
   keep: ReadonlySet<string> = new Set(),
-): Promise<File> {
+): Promise<RestoreResult> {
   const inputs = Array.isArray(input) ? input : [input];
   onProgress?.("正在备份当前内容…");
-  // 正要恢复的那份可能就是最旧的保留备份：先保护它不被清掉，恢复完再按常规收拾。
+  // 这一份不收拾旧份：正要恢复的那份可能就是最旧的保留备份，恢复完再按常规收拾。
   let snapshot = store.get();
-  let prior = await writeManifest(snapshot, onProgress, signal, inputs, false);
+  let { out: prior, skipped } = await writeManifest(
+    snapshot,
+    true,
+    onProgress,
+    signal,
+  );
   const priors = [prior];
   let restored: Library | null = null;
   let replaced: LocalMedia[] = [];
@@ -885,13 +1001,12 @@ export async function restoreBackup(
           );
         onProgress?.("恢复途中又有新内容，正在重新备份当前内容…");
         snapshot = store.get();
-        prior = await writeManifest(
+        ({ out: prior, skipped } = await writeManifest(
           snapshot,
+          true,
           onProgress,
           signal,
-          [...inputs, prior],
-          false,
-        );
+        ));
         priors.push(prior);
       }
     }
@@ -932,7 +1047,7 @@ export async function restoreBackup(
       }
   // 恢复完按常规只留三份；刚写的「恢复前」那份占一个位，最旧的让位。收拾出错不影响已完成的恢复。
   tidyBackups([prior]);
-  return prior;
+  return { prior, skipped };
 }
 /**
  * 系统文件选择器把选中的备份复制进缓存的 DocumentPicker 目录；恢复做完、取消或出错后删掉这份副本，
