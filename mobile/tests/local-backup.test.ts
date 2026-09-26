@@ -1390,7 +1390,8 @@ it("A-14 清掉一小时前的清单写入残片，保留新残片与七天内�
 });
 
 it("records letter ancestry through rewriting, sealing and opening, with no ancestry on creation", async () => {
-  const { beginLetter, updateLetter, sealLetter, openLetter } = await import("../src/local/services");
+  const { beginLetter, sealLetter, openLetter } = await import("../src/local/services");
+  const { writeLetter } = await import("../src/local/letters");
   const { LocalStore } = await import("../src/local/store");
   let disk = emptyLibrary();
   const store = new LocalStore({ read: async () => disk, write: async (s) => { disk = clone(s); } });
@@ -1398,7 +1399,7 @@ it("records letter ancestry through rewriting, sealing and opening, with no ance
   const id = await beginLetter(store, "爸爸");
   const created = store.get().letters[id]!;
   expect(created).not.toHaveProperty("ancestors");
-  await store.change((s) => updateLetter(s, { ...created, text: "给未来的你", ancestors: ["f".repeat(16)] }));
+  await store.change((s) => writeLetter(s, { ...created, text: "给未来的你", ancestors: ["f".repeat(16)] }, created, () => "unused"));
   const written = store.get().letters[id]!;
   expect(written.ancestors).toEqual([contentHashOf(created).slice(0, 16)]);
   await sealLetter(store, id);

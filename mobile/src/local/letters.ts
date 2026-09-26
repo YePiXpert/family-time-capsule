@@ -1,6 +1,7 @@
 /** 时间胶囊信的纯函数：状态判定、默认拆封日、标签与排序。界面不在这里。 */
 import { nthBirthday, toDayKey } from "./dates";
-import type { LocalLetter, Stored } from "./model";
+import { contentHashOf, lineage } from "./hash";
+import { clone, type Library, type LocalLetter, type Stored } from "./model";
 
 export type LetterState = "draft" | "sealed" | "openable" | "opened";
 
@@ -125,4 +126,29 @@ export function openLetterAt(
   if (!letter.sealed) throw new Error("信还没封存。");
   if (letter.openedAt) return letter;
   return { ...letter, openedAt: at, updatedAt: at };
+}
+
+/**
+ * 写信页落盘：整封替换，返回库里的这一封。base 是编辑页这一份的来源版本（打开时的、上次写下的或并进来的）。
+ * 世系记 base 而不是库里现在那封：同步在编辑途中并进了别人的一版时，这次写入与它并发，
+ * 对方手机据此把自己那版留成冲突卡，不会被悄悄盖掉。
+ * 这封信编辑途中在别的手机被删或封存了：这边没写新字就什么都不存（返回 null）；写了就另存成一封新信，一个字不丢。
+ */
+export function writeLetter(
+  s: Library,
+  letter: Stored<LocalLetter>,
+  base: Stored<LocalLetter>,
+  freshId: () => string,
+): Stored<LocalLetter> | null {
+  const existing = s.letters[letter.id];
+  if (!existing || existing.sealed) {
+    if (contentHashOf(letter) === contentHashOf(base)) return null;
+    const { ancestors: _, ...rest } = clone(letter);
+    const rescued = { ...rest, id: freshId(), sealed: false as const };
+    s.letters[rescued.id] = rescued;
+    return rescued;
+  }
+  const next = { ...clone(letter), ancestors: lineage(base) };
+  s.letters[letter.id] = next;
+  return next;
 }

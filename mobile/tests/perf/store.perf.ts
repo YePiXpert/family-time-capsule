@@ -111,7 +111,7 @@ describe("LocalStore", () => {
       await bench(G, "change: keystroke draft update (updateDraft, sqlite)", n, () =>
         store.change((s) => {
           const d = s.drafts.d1!;
-          // services.updateDraft 的本体：整份草稿换成新副本。
+          // model.updateDraft 的本体：整份草稿换成新副本。
           s.drafts.d1 = clone({ ...d, content: { ...d.content, text: `${d.content.text}啊` }, updatedAt: new Date(Date.now() + tick++).toISOString() } as RecordDraft);
         }), { runs: 15 });
       await bench(G, "change: patchRecord toggle first (sqlite)", n, () =>

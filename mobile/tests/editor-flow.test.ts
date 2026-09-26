@@ -129,15 +129,11 @@ vi.mock("../src/local/files", () => ({
   deleteMediaFiles: vi.fn(),
   mediaFile: vi.fn(),
 }));
-// services 连着分享入口等原生模块，只留 Editor 与 useDraftPersist 用到的几样；updateDraft 照原样。
+// services 连着分享入口等原生模块，只留 Editor 与 useDraftPersist 用到的几样（updateDraft 在 model 里，照原样）。
 vi.mock("../src/local/services", () => ({
   newId: () => "new-id",
   now: () => "2026-09-25T08:00:00.000Z",
   createPerson: vi.fn(),
-  updateDraft: (s: Library, draft: RecordDraft) => {
-    if (!s.drafts[draft.id]) throw new Error("草稿已关闭，请重新打开。");
-    s.drafts[draft.id] = JSON.parse(JSON.stringify(draft));
-  },
 }));
 vi.mock("../src/local/context", () => ({
   useStore: () => store,
@@ -382,4 +378,38 @@ it("#17 改完已有记录回阅读页用 merge，保留「随便翻翻」带来
   expect(env.popTo).toHaveBeenCalledWith("Record", { id: "r1" }, { merge: true });
   expect(env.lib.records.r1!.text).toBe("改过的正文");
   expect(env.lib.records.r1!.revision).toBe(4);
+});
+it("编辑途中原记录在别的手机被删、同步把草稿改成新的一段：接着打字不撤销救援，仍能保存", async () => {
+  env.lib.records.r1 = {
+    ...emptyContent(),
+    id: "r1",
+    revision: 3,
+    updatedAt: "2026-09-20T07:00:00.000Z",
+    date: "2026-09-20T07:00:00.000Z",
+    text: "原来的正文",
+  };
+  env.lib.drafts.d = newDraft({
+    recordId: "r1",
+    baseRevision: 3,
+    autoDate: false,
+    autoLocation: false,
+    content: { ...emptyContent(), date: "2026-09-20T07:00:00.000Z", text: "原来的正文，又写了一段" },
+  });
+  render();
+  // 自动同步合并（src/sync/merge.ts:305-316 的做法）：记录删了，草稿改成一段新的时光。
+  delete env.lib.records.r1;
+  env.lib.drafts.d = { ...env.lib.drafts.d!, recordId: null, baseRevision: 0 };
+  // 妈妈接着写：一次击键（防抖落盘）。
+  (all().find((n) => n.props.testID === "capture-text")!.props as unknown as {
+    onChangeText: (t: string) => void;
+  }).onChangeText("原来的正文，又写了一段。还有一句");
+  byId("capture-save")!.onPress!();
+  await vi.waitFor(() => {
+    render();
+    expect((byType("ErrorText") as { message?: string } | undefined)?.message ?? "").toBe("");
+    expect(env.popTo).toHaveBeenCalledOnce();
+  }, { timeout: 1500 });
+  // 存成一段新的时光，一个字不丢。
+  expect(env.lib.records["new-id"]?.text).toBe("原来的正文，又写了一段。还有一句");
+  expect(env.lib.records.r1).toBeUndefined();
 });
