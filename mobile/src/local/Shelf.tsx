@@ -212,10 +212,15 @@ export function Shelf() {
       .then((sessionId) => nav.navigate("Picker", { sessionId }))
       .catch((e) => setError(messageOf(e)));
   };
+  // 转场中连点：第二下只会改写已经打开的写信页参数，多建的那封空信就留在书架上，还会同步给全家。
   const createLetter = () => {
+    if (!captureGuard.take()) return;
     void beginLetter(store)
       .then((id) => nav.navigate("LetterEditor", { id }))
-      .catch((e) => setError(messageOf(e)));
+      .catch((e) => {
+        captureGuard.release();
+        setError(messageOf(e));
+      });
   };
   const tileOf = (tile: ShelfTile, index: number) => {
     switch (tile.kind) {

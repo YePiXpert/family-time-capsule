@@ -20,7 +20,7 @@ import {
 import { deleteRecord, patchRecord } from "./model";
 import { looksLikeCoordinates, placeLabel } from "./places";
 import { pickAnother } from "./shuffle";
-import type { Props } from "./navigation";
+import { useFocusGuard, type Props } from "./navigation";
 import {
   BottomBar,
   Button,
@@ -54,6 +54,7 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
     [chooseAlbum, setChooseAlbum] = useState(false),
     [photoIndex, setPhotoIndex] = useState(0);
   const pager = useRef<ScrollView>(null);
+  const albumGuard = useFocusGuard();
   const cardRef = useRef<Svg | null>(null),
     [card, setCard] = useState<{
       photo?: { uri: string; aspect: number };
@@ -170,13 +171,18 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
       })
       .catch((e) => setError(messageOf(e)));
   };
+  // 转场中连点只建一本：多建的那本空相册会留在书架上，还会同步给全家。
   const createAlbum = () => {
+    if (!albumGuard.take()) return;
     void createAlbumWithRecords(store, [record.id])
       .then((id) => {
         setChooseAlbum(false);
         navigation.navigate("Album", { id });
       })
-      .catch((e) => setError(messageOf(e)));
+      .catch((e) => {
+        albumGuard.release();
+        setError(messageOf(e));
+      });
   };
   // 同一记录多张照片横向分页连翻；其他素材在正文后逐条列出。
   const photos = record.mediaIds

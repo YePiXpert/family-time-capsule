@@ -13,6 +13,7 @@ const env = vi.hoisted(() => ({
   focusEffects: [] as (() => void)[],
   navigate: vi.fn(),
   beginDraft: vi.fn(),
+  beginLetter: vi.fn(),
   library: undefined as unknown,
 }));
 vi.mock("react", async (original) => ({
@@ -70,7 +71,7 @@ vi.mock("../src/local/context", () => ({
 }));
 vi.mock("../src/local/services", () => ({
   beginDraft: env.beginDraft,
-  beginLetter: vi.fn(),
+  beginLetter: env.beginLetter,
   beginSelection: vi.fn(),
   now: () => "2026-09-25T00:00:00.000Z",
 }));
@@ -253,4 +254,25 @@ it("#14 书架草稿：只有一份空白新草稿时既没有草稿卡，也不
   expect(nodes(tree).find((el) => "drafts" in el.props)).toBeUndefined();
   expect(byTestID(tree, "resume-blank")).toBeUndefined();
   expect(nodes(tree).filter((el) => el.props.action?.label === "继续写")).toEqual([]);
+});
+
+it("书架「写一封信」：转场中连点只建一封信，回到前台后照常；建信失败放行", async () => {
+  let n = 0;
+  env.beginLetter.mockReset();
+  env.beginLetter.mockImplementation(async () => `letter-${++n}`);
+  const write = () => byTestID(render(Shelf), "letter-new")!;
+  write().props.onPress!();
+  await settle();
+  write().props.onPress!();
+  await settle();
+  expect(env.beginLetter).toHaveBeenCalledOnce();
+  expect(env.navigate).toHaveBeenCalledOnce();
+  focus();
+  env.beginLetter.mockRejectedValueOnce(new Error("写不进去"));
+  write().props.onPress!();
+  await settle();
+  write().props.onPress!();
+  await settle();
+  expect(env.beginLetter).toHaveBeenCalledTimes(3);
+  expect(env.navigate).toHaveBeenLastCalledWith("LetterEditor", { id: "letter-2" });
 });

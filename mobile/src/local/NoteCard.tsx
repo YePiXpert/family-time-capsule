@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Alert, View } from "react-native";
 import {
+  useNavigation,
+  usePreventRemove,
+  type NavigationAction,
+} from "@react-navigation/native";
+import {
   Button,
   Card,
   ErrorText,
@@ -43,6 +48,10 @@ export function NoteCard({
     [error, setError] = useState("");
   const draftRef = useRef(note);
   const request = useRef<AbortController | null>(null);
+  const navigation = useNavigation(),
+    [leaving, setLeaving] = useState<NavigationAction | null>(null),
+    // 保存途中按了返回：存好再走，存不上就留下看错误。
+    heldExit = useRef<NavigationAction | null>(null);
   const updateDraft = (value: string) => {
     draftRef.current = value;
     setDraft(value);
@@ -59,15 +68,50 @@ export function NoteCard({
     },
     [],
   );
-  const save = () => {
+  const save = (then?: () => void) => {
     cancelAssist();
     setBusy(true);
     setError("");
-    void onSave(draft.trim())
-      .then(() => setEditing(false))
+    void onSave(draftRef.current.trim())
+      .then(() => {
+        setEditing(false);
+        then?.();
+        if (heldExit.current) setLeaving(heldExit.current);
+      })
       .catch((e) => setError(messageOf(e)))
-      .finally(() => setBusy(false));
+      .finally(() => {
+        heldExit.current = null;
+        setBusy(false);
+      });
   };
+  const discard = () => {
+    cancelAssist();
+    updateDraft(note);
+    setEditing(false);
+    setError("");
+  };
+  // 写了没保存就返回、侧滑：保存还是放弃说清楚再走（DESIGN.md）。放行要等守卫撤掉之后，否则会再拦一次。
+  usePreventRemove(editing && draft !== note && !leaving, ({ data }) => {
+    if (busy) {
+      heldExit.current = data.action;
+      return;
+    }
+    Alert.alert("寄语还没保存", "要先保存再离开吗？", [
+      { text: "继续写", style: "cancel" },
+      {
+        text: "不保存",
+        style: "destructive",
+        onPress: () => {
+          discard();
+          setLeaving(data.action);
+        },
+      },
+      { text: "保存", onPress: () => save(() => setLeaving(data.action)) },
+    ]);
+  });
+  useEffect(() => {
+    if (leaving) navigation.dispatch(leaving);
+  }, [leaving, navigation]);
   const draftWithAI = () => {
     if (!assist) return;
     request.current?.abort();
@@ -131,7 +175,7 @@ export function NoteCard({
               compact
               testID={`${testPrefix}-save`}
               disabled={busy}
-              onPress={save}
+              onPress={() => save()}
             />
             {!!assist && (
               <Button
@@ -147,12 +191,7 @@ export function NoteCard({
               title="取消"
               compact
               disabled={busy}
-              onPress={() => {
-                cancelAssist();
-                updateDraft(note);
-                setEditing(false);
-                setError("");
-              }}
+              onPress={discard}
             />
           </View>
           <ErrorText message={error} />
