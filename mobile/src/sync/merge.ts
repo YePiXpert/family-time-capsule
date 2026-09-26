@@ -20,16 +20,13 @@ export { canonical, contentHashOf, hashOf } from "../local/hash";
  * 家人一起写的合并：纯函数，不碰磁盘不碰网络。输入本机库、别人的清单（整库快照）与上次同步之基，
  * 输出合并后的库、新记的冲突、要去下载的素材与新的基。任何一步都不改传入的对象。
  *
- * 逐实体（records／albums／series／letters／persons）三方合并，基是三样东西：
+ * 逐实体（records／albums／series／letters／persons）三方合并，基是两样东西：
  * - merged：上次同步结束时本机每个实体的指纹。本机指纹 = 它 → 本机这一段没动过。
  * - known：本机已经处理过的其他版本（曾持有、曾判输、曾判过时）。别人的清单是整库快照，
  *   输掉的旧版会一直躺在里面，认得它们才不会把删掉、改掉的东西送回来，也不会反复出同一张冲突卡。
- * - published：各台上次发布的根字段与人物，认出没有时间戳的值被改回见过的一枚（见 SyncBase）。
  * 规则：远端版本与本机相同、与基相同或已认得 → 不看；世系先说话：远端接着本机改的 → 取远端（哪怕时钟慢），
  * 远端早在本机世系里 → 不动。其余：本机没动 → 取远端（远端比本机还旧的除外：
  * 留本机、出冲突卡；远端有世系但不源自本机版时，本机输掉的一版也留底）；两边都动 → 按 updatedAt 新者胜、同秒比内容哈希，输的一版留底；内容相同不算冲突。
- * 空基（刚恢复了备份、带着自己的资料加入）：没有时间戳的资料、封面、人物，家里有的听家里最新那份清单，本机只补家里没有的；
- * 年度寄语照旧接上每一段，选片目录照旧新者胜。
  * 墓碑：删除时刻晚于实体 updatedAt → 删（本机改过又被删也留底）；实体在墓碑之后改过 → 改者胜。
  * 相册／系列两边都动：名字随赢家，条目取并集（赢家在前）；人物同名自动并成一个（id 小的留下）。
  * 素材按 id 取并集、本机已有的永不被覆盖，只带回合并后共享实体引用到的那些。
@@ -55,26 +52,14 @@ export type MergeResult = {
  * 合并之基。merged：上次同步结束时本机库里每个共享实体的指纹（kind → id → 指纹；根字段以 "root" 为 kind），
  * 与它相同 = 「本机这一段没动过」。known：每个实体本机已经处理过的其他版本——曾持有、曾判输、曾判过时——
  * 别人的清单是整库快照，输掉的旧版会一直躺在里面，认得它们才不会把删掉、改掉的东西送回来。
- * 版本号一直是 1：published 是后加的可选项，新旧应用读对方写的 base.json 都不出错。
  */
 export type SyncBase = {
   version: 1;
   merged: Record<string, Record<string, string>>;
   known: Record<string, string[]>;
-  /**
-   * 每台手机上次并入的清单里各根字段与人物的指纹尾（deviceId → "root:…"／"persons:…" → publishedTag；根字段空着不记）。
-   * 这些值没有 updatedAt，改回见过的值（桉桉→安安→桉桉、奶奶→外婆→奶奶）指纹也回到见过的一枚，光靠 known 会被当成旧版挡掉。
-   * 那台手机上次发布的与本机的基相同、这次换了：是它新的改动，哪怕换成了见过的值。清单没变的旧快照不算。
-   * 旧版的 base.json 没有这一项：头一轮照旧只认 known，之后就有了；旧版应用读新文件时忽略它。
-   */
-  published?: Record<string, Record<string, string>>;
 };
 /** 每个实体最多记这么多枚见过的指纹；改动本来就少，超过就丢最旧的。 */
 export const KNOWN_LIMIT = 32;
-/** 最多记这么多台手机的上次发布（新读到的在前）；一个家不会有这么多台。 */
-export const PUBLISHED_DEVICES = 32;
-/** 发布记录只存指纹尾 16 位：只用来比「变没变」，省地方。 */
-export const publishedTag = (fp: string) => fp.slice(-16);
 export const emptyBase = (): SyncBase => ({
   version: 1,
   merged: {},
@@ -463,23 +448,6 @@ export function mergeLibraries(
     list.push(fp);
     if (list.length > KNOWN_LIMIT) list.splice(0, list.length - KNOWN_LIMIT);
   };
-  // 这一轮读到的各台清单里根字段与人物的指纹尾；同一台只认最新的一份（ordered 新的在前）。
-  const latest = new Map<string, RemoteSnapshot>();
-  for (const r of ordered) if (!latest.has(r.deviceId)) latest.set(r.deviceId, r);
-  const published: Record<string, Record<string, string>> = {};
-  const publish = (r: RemoteSnapshot, key: string, fp: string) => {
-    if (latest.get(r.deviceId) === r) (published[r.deviceId] ??= {})[key] = publishedTag(fp);
-  };
-  /** 这台手机上次发布的正是本机的基，这次换成了 fp：它刚改过（哪怕改回了见过的值）。 */
-  const movedOn = (r: RemoteSnapshot, key: string, fp: string, M: string | undefined) => {
-    const before = base.published?.[r.deviceId];
-    if (!before || M === undefined || latest.get(r.deviceId) !== r) return false;
-    const previous = before[key] ?? "-";
-    return previous === publishedTag(M) && previous !== publishedTag(fp);
-  };
-  // 空基：刚恢复了备份（恢复先清掉合并记录）或带着自己的资料刚加入。没有时间戳的根字段与人物分不出谁新，
-  // 家里已有的就听家里的（最新的那份清单），本机的只补家里没有的——否则旧备份里的名字会被当成新改动传遍全家。
-  const fresh = !Object.keys(base.merged).length && !Object.keys(base.known).length;
   let pulled = 0;
   // 墓碑：全家的并集，同一块碑取最晚的时刻。
   const tombstones: Record<string, string> = { ...(local.tombstones ?? {}) };
@@ -548,10 +516,7 @@ export function mergeLibraries(
         const R = collection(r.library, kind)[id];
         if (!R) continue;
         const fp = L && sameVersion(R, L) ? fpL! : fingerprintOf(R);
-        // 人物没有 updatedAt：改名改回去（奶奶→外婆→奶奶）只能靠那台手机的发布记录认出来。
-        if (kind === "persons") publish(r, key, fp);
-        if (fp === fpL || fp === M) continue;
-        if (knownHere.has(fp) && !(kind === "persons" && movedOn(r, key, fp, M))) continue;
+        if (fp === fpL || fp === M || knownHere.has(fp)) continue;
         if (candidates.some((c) => c.fp === fp)) continue;
         candidates.push({
           fp,
@@ -582,12 +547,6 @@ export function mergeLibraries(
       }
       if (!L) {
         adopt(kind, id, C.entity);
-        continue;
-      }
-      if (fresh && kind === "persons") {
-        // 空基：人物听家里最新的那份清单；它与本机相同就不动。
-        const family = ordered.map((r) => collection(r.library, kind)[id]).find((e) => !!e)!;
-        if (!sameVersion(family, L)) adopt(kind, id, family);
         continue;
       }
       const localVersion: Version = { fp: fpL!, entity: L, device: null };
@@ -677,15 +636,10 @@ export function mergeLibraries(
     remember(key, M);
     remember(key, fpL);
     const candidates: { fp: string; value: unknown }[] = [];
-    // 选片目录自带 updatedAt，真改动的指纹必定是新的，不需要发布记录。
-    const timed = id.startsWith("yearPicks:");
     for (const r of ordered) {
       const value = rootValue(r.library, id);
       const fp = rootFp(value);
-      if (!timed && fp !== "-") publish(r, key, fp);
-      if (fp === fpL || fp === M) continue;
-      // 见过的值：那台手机刚从本机的基改过来（改回去了）才算新改动，一直躺在清单里的旧值不算。
-      if (knownHere.has(fp) && (timed || !movedOn(r, key, fp, M))) continue;
+      if (fp === fpL || fp === M || knownHere.has(fp)) continue;
       // 还没有基（头一回合并）时，空着的一项就是没填过，不算改动。
       if (M === undefined && isBlank(value)) continue;
       if (candidates.some((c) => c.fp === fp)) continue;
@@ -705,16 +659,6 @@ export function mergeLibraries(
       }
       return b.fp.localeCompare(a.fp);
     });
-    // 空基：家里最新那份清单里有值的，资料、封面就取它。选片目录自带 updatedAt，照旧新者胜；
-    // 年度寄语照旧按哈希顺序接上每一段（一个字不丢，旧备份里被包含的那段不重复）——换了顺序，别的手机会把同样几段再接一遍。
-    if (fresh && !timed && !id.startsWith("yearNotes:")) {
-      const familyFp = ordered
-        .map((r) => rootValue(r.library, id))
-        .filter((v) => !isBlank(v))
-        .map(rootFp)[0];
-      const at = candidates.findIndex((c) => c.fp === familyFp);
-      if (at > 0) candidates.unshift(...candidates.splice(at, 1));
-    }
     // 默认按内容哈希；目录先比更新时间；年度寄语按同一顺序接上每台手机的文字。
     let value = candidates[0]!.value;
     if (id.startsWith("yearNotes:") && typeof value === "string") {
@@ -769,24 +713,11 @@ export function mergeLibraries(
   for (const [kind, ids] of Object.entries(merged))
     for (const [id, fp] of Object.entries(ids))
       if (known[`${kind}:${id}`]) remember(`${kind}:${id}`, fp);
-  // 这一轮读到的手机换上新记录，没读到的（清单没变）照旧；新读到的在前，按台数封顶。
-  const nextPublished: Record<string, Record<string, string>> = {};
-  for (const device of latest.keys()) nextPublished[device] = published[device] ?? {};
-  for (const [device, tags] of Object.entries(base.published ?? {}))
-    if (!latest.has(device)) nextPublished[device] = tags;
-  const publishedDevices = Object.keys(nextPublished).slice(0, PUBLISHED_DEVICES);
   return {
     next,
     conflicts,
     wantedMedia,
-    base: {
-      version: 1,
-      merged,
-      known,
-      ...(publishedDevices.length
-        ? { published: Object.fromEntries(publishedDevices.map((d) => [d, nextPublished[d]!])) }
-        : {}),
-    },
+    base: { version: 1, merged, known },
     pulled,
   };
 }
