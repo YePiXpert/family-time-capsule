@@ -12,6 +12,8 @@ export type Ctx = {
  auth: (header?: string) => Member;
  admin: (header?: string) => Member;
  throttle: (req: Pick<FastifyRequest, 'ip'>, scope: string, perIp: number, globalLimit: number) => void;
+ /** 配对申请按哪个来源地址分名额；undefined = 分不出来（没设 TRUST_PROXY 时经反代进来），只算全服务上限。 */
+ pairSource: (req: Pick<FastifyRequest, 'ip'>) => string | undefined;
 };
 /** 不带令牌也能访问的路由；其余路由在 onRequest 里先验令牌，再读请求体。 */
 export const open = { config: { anonymous: true } } as const;

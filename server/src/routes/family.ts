@@ -5,7 +5,7 @@ import { name, open, type Ctx } from './context.ts';
  * 家庭与设备（1.1.0）：没有用户名密码。空服务凭部署端激活码开家庭；新手机由管理者当面扫码批准；
  * 所有管理者手机都没了，凭恢复码找回。服务端只存令牌哈希、设备公钥、加密的钥匙包与恢复证明的哈希。
  */
-export function familyRoutes({app,store,auth,admin,throttle}:Ctx) {
+export function familyRoutes({app,store,auth,admin,throttle,pairSource}:Ctx) {
  const deviceName=z.string().trim().min(1).max(80);
  const key32=z.string().regex(/^[A-Za-z0-9_-]{43}$/);
  const hex=(bytes:number)=>z.string().regex(new RegExp(`^[a-f0-9]{${bytes*2}}$`));
@@ -32,7 +32,7 @@ export function familyRoutes({app,store,auth,admin,throttle}:Ctx) {
  app.post('/api/v1/pair/requests',open,async (req,reply)=>{
   throttle(req,'pair',10,30);
   const input=z.object({publicKey:key32,deviceName,claimHash:hex(32)}).strict().parse(req.body);
-  return reply.code(201).send(store.createPair(input,req.ip));
+  return reply.code(201).send(store.createPair(input,pairSource(req)));
  });
  app.get('/api/v1/pair/requests/:id',async req=>{
   admin(req.headers.authorization);
