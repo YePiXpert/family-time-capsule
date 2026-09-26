@@ -440,3 +440,49 @@ it("停用后重新获准的手机，第一次同步就发布自己的清单", a
   await a.family.runFamilySync(a.store, { transport: tA, key });
   expect(a.store.get().records["r-mm"]?.text).toBe("妈妈刚写的");
 }, 120000);
+
+it("只装订了年度册的手机也发布，另一台收到装订时刻", async () => {
+  const key = new Uint8Array(randomBytes(16));
+  const mom = await pair({ id: randomUUID(), name: `妈妈${randomUUID().slice(0, 4)}`, role: "member" }, "mom-bound");
+  const tA = transportOf(() => adminToken);
+  const tB = transportOf(() => mom.token);
+  let a = await openPhone();
+  const rootA = a.root;
+  await addRecord(a, "y1", { photo: 90 });
+  await a.family.joinFamily(a.store, key, { transport: tA });
+  let b = await openPhone();
+  const rootB = b.root;
+  await b.family.joinFamily(b.store, key, { transport: tB });
+  a = await openPhone(rootA);
+  await a.store.change((s) => {
+    s.yearBooksBoundAt = { "2025": "2026-01-02T00:00:00.000Z" };
+  });
+  const r = await a.family.runFamilySync(a.store, { transport: tA, key });
+  expect(r.lastSyncSummary?.pushed).toBeGreaterThan(0);
+  b = await openPhone(rootB);
+  await b.family.runFamilySync(b.store, { transport: tB, key });
+  expect(b.store.get().yearBooksBoundAt?.["2025"]).toBe("2026-01-02T00:00:00.000Z");
+}, 120000);
+
+it("每天的小问题、默认落款等本机设置不随清单发给家人", async () => {
+  const key = new Uint8Array(randomBytes(16));
+  const mom = await pair({ id: randomUUID(), name: `妈妈${randomUUID().slice(0, 4)}`, role: "member" }, "mom-settings");
+  const tA = transportOf(() => adminToken);
+  const tB = transportOf(() => mom.token);
+  const a = await openPhone();
+  await addRecord(a, "s1", { photo: 91 });
+  await a.store.change((s) => {
+    s.settings = {
+      ...s.settings,
+      by: "爸爸",
+      dailyQuestion: { requestedDay: "2026-09-20", day: "2026-09-20", question: "只给这台手机的问题", asked: [] },
+    };
+  });
+  await a.family.joinFamily(a.store, key, { transport: tA });
+  const b = await openPhone();
+  const aEntry = (await tB.manifests()).find((e) => e.deviceName === "dad-1")!;
+  const man = await b.engine.fetchManifestOf(aEntry, { transport: tB, key });
+  const lib = b.format.decodeLibraryV2(man.meta, man.entities);
+  expect(lib.settings).toEqual({ theme: "auto", largeText: false });
+  expect(lib.records["r-s1"]).toBeDefined();
+}, 120000);

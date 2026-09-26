@@ -117,6 +117,12 @@ export async function requestToJoin(d: FlowDeps, deviceName: string): Promise<Jo
   };
 }
 /**
+ * 钥匙和令牌都已存进钥匙串、只差确认的加入（只在内存里，随这条申请一起丢）。确认其实成功了、回应却丢了时，
+ * 再领只会得到「这台手机已经加入了」；所以再轮询时不再去领，用最后领到的那枚令牌再确认一次——
+ * 服务端对已确认的申请照样回成功，还没确认的就此确认。
+ */
+const collected = new WeakMap<JoinRequest, { token: string; joined: JoinedFamily }>();
+/**
  * 看一眼批准了没有：还在等就返回 null。批准了就核对授权是给这条申请、这台手机的，
  * 用本机私钥和二维码里的 S 解开钥匙包（服务器伪造的解不开），先把钥匙和令牌存进钥匙串，
  * 存好了才确认——确认前任何一步失败，24 小时后服务端自己作废这台设备。
@@ -127,6 +133,12 @@ export async function pollJoin(
   signal?: AbortSignal,
 ): Promise<JoinedFamily | null> {
   const { api, vault } = deps(d);
+  const saved = collected.get(join);
+  if (saved) {
+    await api.confirmPair(join.requestId, saved.token);
+    collected.delete(join);
+    return saved.joined;
+  }
   const got = await api.collectPair(join.requestId, join.claim, signal);
   if (got.status === "pending") return null;
   const b = got.binding;
@@ -147,8 +159,11 @@ export async function pollJoin(
   });
   await vault.storeKey(key);
   await vault.saveToken(got.token);
+  const joined = { key, familyId: b.familyId, keyId: b.keyId, member: got.member };
+  collected.set(join, { token: got.token, joined });
   await api.confirmPair(join.requestId, got.token);
-  return { key, familyId: b.familyId, keyId: b.keyId, member: got.member };
+  collected.delete(join);
+  return joined;
 }
 export const cancelJoin = (d: FlowDeps, join: JoinRequest) =>
   deps(d).api.cancelPairAsDevice(join.requestId, join.claim);

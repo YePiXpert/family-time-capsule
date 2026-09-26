@@ -305,3 +305,53 @@ it("换恢复码先抄后交：核对前旧的照常能用；响应丢了原样�
     await other.stop();
   }
 }, 60000);
+it("加入时确认其实成功了、回应丢了：再轮询用存好的令牌再确认一次就算加入，不再去领、不退回出码前", async () => {
+  const other = await startServer();
+  try {
+    const dad = phone(other.base);
+    await startFamily(dad, { activationCode: other.activationCode(), memberName: "爸爸", deviceName: "爸爸的手机" });
+    const mom = phone(other.base);
+    const join = await requestToJoin(mom, "妈妈的手机");
+    await approveJoin(dad, await inspectJoin(dad, join.qr), { kind: "new", name: "妈妈", role: "member" });
+    const confirm = mom.api.confirmPair;
+    const collect = vi.spyOn(mom.api, "collectPair");
+    // 服务收下了确认，手机没收到回应。
+    vi.spyOn(mom.api, "confirmPair").mockImplementationOnce(async (id, token) => {
+      await confirm(id, token);
+      throw new FamilyError("NETWORK", "现在连不上服务，请稍后再试。");
+    });
+    await expect(pollJoin(mom, join)).rejects.toMatchObject({ code: "NETWORK" });
+    expect((await mom.api.family()).me.name).toBe("妈妈");
+    // 家庭页网络错误后照常再轮询一次：这回完成加入，钥匙还是家庭那把。
+    const joined = await pollJoin(mom, join);
+    expect(joined?.member.name).toBe("妈妈");
+    expect(keyIdOf(joined!.key)).toBe(keyIdOf(dad.box.key!));
+    expect(collect).toHaveBeenCalledOnce();
+    expect((await dad.api.overview()).devices.find((d) => d.name === "妈妈的手机")?.pending).toBe(0);
+    // 已确认的申请不能再领钥匙包。
+    expect(await code(pollJoin(mom, join))).toBe("PAIR_CLOSED");
+  } finally {
+    await other.stop();
+  }
+}, 60000);
+it("加入时确认的请求没到服务：再轮询用同一枚令牌确认，不再领一枚新的", async () => {
+  const other = await startServer();
+  try {
+    const dad = phone(other.base);
+    await startFamily(dad, { activationCode: other.activationCode(), memberName: "爸爸", deviceName: "爸爸的手机" });
+    const mom = phone(other.base);
+    const join = await requestToJoin(mom, "妈妈的手机");
+    await approveJoin(dad, await inspectJoin(dad, join.qr), { kind: "new", name: "妈妈", role: "member" });
+    const collect = vi.spyOn(mom.api, "collectPair");
+    vi.spyOn(mom.api, "confirmPair").mockRejectedValueOnce(new FamilyError("NETWORK", "现在连不上服务，请稍后再试。"));
+    await expect(pollJoin(mom, join)).rejects.toMatchObject({ code: "NETWORK" });
+    expect((await dad.api.overview()).devices.find((d) => d.name === "妈妈的手机")?.pending).toBe(1);
+    const token = mom.box.token;
+    expect((await pollJoin(mom, join))?.member.name).toBe("妈妈");
+    expect(collect).toHaveBeenCalledOnce();
+    expect(mom.box.token).toBe(token);
+    expect((await dad.api.overview()).devices.find((d) => d.name === "妈妈的手机")?.pending).toBe(0);
+  } finally {
+    await other.stop();
+  }
+}, 60000);

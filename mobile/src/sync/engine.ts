@@ -22,7 +22,13 @@ import {
   hashFile,
   type FileHandle,
 } from "../local/files";
-import { referencedMedia, type Library } from "../local/model";
+import {
+  emptyLibrary,
+  referencedMedia,
+  rootOf,
+  type EntityKind,
+  type Library,
+} from "../local/model";
 import {
   fromBase64,
   keyIdOf,
@@ -43,7 +49,7 @@ import {
   type UploadItem,
 } from "./planner";
 import { SyncError, type RemoteManifest, type Transport } from "./transport";
-import { canonical, sharedRootOf } from "./merge";
+import { canonical } from "./merge";
 /**
  * 远端备份引擎：本机清单备份（.xmbm + blob 库）是源头，远端只是它的密文副本。
  * 备份 = 写本机清单 → 规划对象 → 问远端缺哪些 → 只传缺的 → 传清单对象与索引 → 收拾多余对象。
@@ -146,18 +152,60 @@ export async function assertSameKey(deps: EngineDeps): Promise<string> {
   return keyId;
 }
 /**
- * 发到家里的那份库：草稿只在这台手机上（加入页与同步卡都这样说），素材只发共享内容用到的——
- * 草稿里的、从草稿移出或随草稿放弃的照片录音都不传。家人合并只要共享实体引用到的素材，
- * 本来就不看别人清单里的草稿；校验要求的记录、信、头像素材都在这里面。
+ * 库根每个字段发不发给家人。新加的根字段不在这里分好类就编译不过：设备上的东西不会悄悄发出去，
+ * 共享的东西也不会漏出指纹。家人合并只读 profile、年度寄语／封面／目录、装订时刻与墓碑；
+ * 其余是这台手机自己的（每天的小问题、默认落款、锁、外观、提醒卡、收到的分享、导出时刻），
+ * 写入计数每写一次都变，发出去会让指纹次次不同。welcome 不私密、只翻一次，照发（Build 71 从远端整库恢复时不再弹欢迎页）。
+ */
+const PUBLISHED_ROOT = {
+  version: true,
+  profile: true,
+  yearNotes: true,
+  yearCovers: true,
+  yearPicks: true,
+  yearBooksBoundAt: true,
+  tombstones: true,
+  welcome: true,
+  revision: false,
+  settings: false,
+  nudgeClosedAt: false,
+  receivedShares: false,
+  lastExportAt: false,
+} satisfies Record<Exclude<keyof Library, EntityKind>, boolean>;
+/**
+ * 发给家人的库根：共享字段照抄，本机字段换成空库的默认值（旧版校验要求 settings、receivedShares 等键在）。
+ * 清单的 meta.root 就是它，「发出去的内容」指纹也用它，两者不会再对不上。
+ */
+export function publishedRootOf(state: Library): Partial<Library> {
+  const root: Record<string, unknown> = rootOf(emptyLibrary());
+  for (const [field, shared] of Object.entries(PUBLISHED_ROOT)) {
+    const value = (state as unknown as Record<string, unknown>)[field];
+    if (shared && value !== undefined) root[field] = value;
+  }
+  return root as Partial<Library>;
+}
+/**
+ * 发到家里的那份库：草稿与选片只在这台手机上（加入页与同步卡都这样说），库根见 publishedRootOf；
+ * 素材只发共享内容用到的——草稿里的、从草稿移出或随草稿放弃的照片录音都不传。
+ * 家人合并只要共享实体引用到的素材；校验要求的记录、信、头像素材都在这里面。
  */
 export function sharedLibrary(state: Library): Library {
-  const rest: Library = { ...state, drafts: {} };
+  const rest = {
+    ...publishedRootOf(state),
+    records: state.records,
+    drafts: {},
+    media: {},
+    albums: state.albums,
+    selections: {},
+    series: state.series,
+    persons: state.persons,
+    letters: state.letters,
+  } as Library;
   const used = new Set([
     ...referencedMedia(rest),
     ...Object.values(rest.records).flatMap((r) => r.coverId ?? []),
     ...Object.values(rest.letters).flatMap((l) => l.coverId ?? []),
     ...Object.values(rest.albums).flatMap((a) => a.coverId ?? []),
-    ...Object.values(rest.selections).flatMap((q) => q.coverId ?? []),
     ...Object.values(rest.series).flatMap((x) => x.items.map((i) => i.mediaId)),
     ...Object.values(rest.yearCovers),
   ]);
@@ -167,11 +215,11 @@ export function sharedLibrary(state: Library): Library {
   return rest;
 }
 /**
- * 「发出去的内容」的指纹：共享实体段加上共享的库根。只比实体段的话，只改年度寄语或宝宝资料的手机
- * 会以为没变、一直不发布（存的字段仍叫 entitiesSha，旧版存的值对不上，升级后多发布一次）。
+ * 「发出去的内容」的指纹：共享实体段加上发出去的库根（与清单同一个函数算出）。只比实体段或只比合并的根字段的话，
+ * 只改年度寄语、只装订了年度册的手机会以为没变、一直不发布（存的字段仍叫 entitiesSha，旧版存的值对不上，升级后多发布一次）。
  */
 export function publishedSha(entities: Uint8Array, state: Library): string {
-  const root = utf8(`\n${canonical(sharedRootOf(state))}`);
+  const root = utf8(`\n${canonical(publishedRootOf(state))}`);
   const bytes = new Uint8Array(entities.length + root.length);
   bytes.set(entities);
   bytes.set(root, entities.length);
@@ -250,7 +298,9 @@ export async function pushManifest(state: Library, deps: EngineDeps) {
     registered,
     deps.signal,
   );
-  if (registered?.length) await deps.transport.prune(registered, deps.signal);
+  // 清单已发布：收拾只为腾空间（服务端按全家登记的对象护住在用的），失败了下一次发布再收，不算这轮失败。
+  if (registered?.length)
+    await deps.transport.prune(registered, deps.signal).catch(() => undefined);
   return {
     index,
     manifestSha,

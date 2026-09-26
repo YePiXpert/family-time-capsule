@@ -12,7 +12,7 @@ const env = vi.hoisted(() => ({
   records: {} as Record<string, unknown>,
   alerts: [] as { title: string; buttons: { text: string; onPress?: () => void }[] }[],
   api: {} as Record<string, ReturnType<typeof vi.fn>>,
-  share: vi.fn(), newest: vi.fn(), leave: vi.fn(), mark: vi.fn(), busy: vi.fn(),
+  share: vi.fn(), newest: vi.fn(), leave: vi.fn(), sync: vi.fn(), mark: vi.fn(), busy: vi.fn(),
   forgetToken: vi.fn(), forgetDeviceKey: vi.fn(), token: vi.fn(),
   prepare: vi.fn(), complete: vi.fn(), recoveryAdmins: vi.fn(),
   clear: vi.fn(), verify: vi.fn(), transport: {} as Record<string, unknown>,
@@ -47,7 +47,7 @@ vi.mock("../src/local/ui", () => ({
   Page: "Page", SettingsGroup: "SettingsGroup", SettingsRow: "SettingsRow", Text: "Text",
   dateLabel: String, messageOf: (e: Error) => e.message, useStyles: () => ({}), useTheme: () => ({ colors: {} }),
 }));
-vi.mock("../src/sync/family", () => ({ startSharing: env.share, readNewestManifest: env.newest, leaveFamily: env.leave }));
+vi.mock("../src/sync/family", () => ({ startSharing: env.share, readNewestManifest: env.newest, leaveFamily: env.leave, runFamilySync: env.sync }));
 vi.mock("../src/sync/state", () => ({ unreadNotice: () => "", clearSyncFiles: env.clear, loadKey: async () => new Uint8Array(32) }));
 vi.mock("../src/sync/SyncCard", () => ({ SyncCard: "SyncCard" }));
 vi.mock("../src/sync/engine", () => ({ verifyRemoteBackup: env.verify }));
@@ -191,6 +191,7 @@ it("找回后没真解开远端的一份，就不给同步入口", async () => {
   expect(find(render(), "family-first-sync")).toBeDefined();
 });
 it("最后一台管理者手机不能退出：先拦下，不忘钥匙、不撤令牌", async () => {
+  env.api.overview!.mockResolvedValue(overview([{}]));
   const tree = render({ kind: "home", family, overview: overview([{}]) });
   find(tree, "family-leave")!.props!.onPress!();
   env.alerts[0]!.buttons.find((b) => b.text === "退出")!.onPress!();
@@ -210,21 +211,39 @@ it("退出：先撤下远端那一份，再作废令牌，最后忘掉令牌与�
   env.forgetToken.mockImplementation(async () => { order.push("token"); });
   env.forgetDeviceKey.mockImplementation(async () => { order.push("device-key"); });
   env.token.mockResolvedValue(null);
+  env.api.overview!.mockResolvedValue(overview([{}, {}]));
   find(render({ kind: "home", family, overview: overview([{}, {}]) }), "family-leave")!.props!.onPress!();
   env.alerts[0]!.buttons.find((b) => b.text === "退出")!.onPress!();
   await vi.waitFor(() => expect((env.slots[STEP] as { kind: string }).kind).toBe("out"));
   expect(order).toEqual(["sync", "server", "token", "device-key"]);
   expect(env.mark.mock.calls).toEqual([[true], [false]]);
 });
-it("设备清单已过时、服务拒绝最后一台管理者退出时保留凭据", async () => {
-  env.leave.mockImplementation(async ({ revokeDevice }: { revokeDevice: () => Promise<void> }) => {
-    await revokeDevice();
+it("页上的设备表已过时：退出前重新拿一份核对，是最后一台管理者手机就不撤清单", async () => {
+  env.api.overview!.mockResolvedValue(overview([{}, { revoked: 1 }]));
+  find(render({ kind: "home", family, overview: overview([{}, {}]) }), "family-leave")!.props!.onPress!();
+  env.alerts[0]!.buttons.find((b) => b.text === "退出")!.onPress!();
+  await vi.waitFor(() => expect(env.slots[ERROR]).toContain("最后一台管理者手机"));
+  expect(env.api.overview).toHaveBeenCalledOnce();
+  expect(env.leave).not.toHaveBeenCalled();
+  expect(env.api.leave).not.toHaveBeenCalled();
+});
+it("设备清单已过时、服务拒绝最后一台管理者退出时保留凭据，并把撤下的那一份发回去", async () => {
+  env.api.overview!.mockResolvedValue(overview([{}, {}]));
+  env.leave.mockImplementation(async ({ revokeDevice, republish }: { revokeDevice: () => Promise<void>; republish: () => Promise<void> }) => {
+    try {
+      await revokeDevice();
+    } catch (e) {
+      await republish();
+      throw e;
+    }
     return { removedRemote: true };
   });
   env.api.leave!.mockRejectedValueOnce(new FamilyError("LAST_ADMIN_DEVICE", "这是最后一台管理者手机。", 400));
   find(render({ kind: "home", family, overview: overview([{}, {}]) }), "family-leave")!.props!.onPress!();
   env.alerts[0]!.buttons.find((b) => b.text === "退出")!.onPress!();
   await vi.waitFor(() => expect(env.slots[ERROR]).toContain("最后一台管理者手机"));
+  expect(env.sync).toHaveBeenCalledOnce();
+  expect(env.sync.mock.calls[0]![1]).toMatchObject({ transport: env.transport, key: new Uint8Array(32) });
   expect(env.forgetToken).not.toHaveBeenCalled();
   expect(env.forgetDeviceKey).not.toHaveBeenCalled();
   expect((env.slots[STEP] as { kind: string }).kind).toBe("home");

@@ -32,6 +32,7 @@ import {
   fetchManifestOf,
   INDEX_LABEL,
   parseIndex,
+  publishedRootOf,
   publishedSha,
   pushManifest,
   sharedLibrary,
@@ -41,7 +42,6 @@ import {
 import {
   canonical,
   mergeLibraries,
-  sharedRootOf,
   type Conflict,
   type RemoteSnapshot,
 } from "./merge";
@@ -149,7 +149,7 @@ function combineConflicts(earlier: readonly Conflict[], added: readonly Conflict
   return [...conflicts.values()];
 }
 /**
- * 上一次核对过（或刚发布）的共享内容：实体按对象、库根按规范 JSON 记下。库里实体深冻结、只整个替换，
+ * 上一次核对过（或刚发布）的共享内容：实体按对象、发出去的库根（publishedRootOf，与清单同源）按规范 JSON 记下。库里实体深冻结、只整个替换，
  * 对象都没换就不用再把整份库编码、哈希一遍（一万段在没有 JIT 的手机上要好几秒）。
  */
 let published: { sha: string; refs: Map<string, object>; root: string } | undefined;
@@ -162,11 +162,11 @@ function sharedRefs(lib: Library): Map<string, object> {
   return refs;
 }
 function rememberPublished(lib: Library, sha: string): void {
-  published = { sha, refs: sharedRefs(lib), root: canonical(sharedRootOf(lib)) };
+  published = { sha, refs: sharedRefs(lib), root: canonical(publishedRootOf(lib)) };
 }
 function publishedUnchanged(lib: Library, sha: string): boolean {
   const refs = sharedRefs(lib),
-    root = canonical(sharedRootOf(lib));
+    root = canonical(publishedRootOf(lib));
   if (
     published?.sha === sha &&
     published.root === root &&
@@ -480,12 +480,15 @@ export async function readNewestManifest(
 }
 
 /**
- * 退出不需要打开本机库。先撤下清单、作废设备，再忘掉本机钥匙；
- * 家庭服务拒绝退出（例如已成为最后一台管理者手机）或暂时不可达时，保留钥匙与同步状态。
+ * 退出不需要打开本机库。先撤下清单、再作废设备，最后忘掉本机钥匙。顺序不能反：作废之后这台的令牌就不认了，
+ * 撤不了自己的清单；服务端也不替作废的设备删清单（同一成员的其他手机照样读得到它）。
+ * 家庭服务拒绝退出（例如已成为最后一台管理者手机）或暂时不可达时，保留钥匙与同步状态；清单已撤下的话，
+ * republish 尽力马上发回一份（没发成也不要紧：远端没有本机清单，下一轮同步照常整份发布，被收走的对象随之补传）。
  */
 export async function leaveFamily(
   deps: Pick<EngineDeps, "transport" | "signal"> & {
     revokeDevice?: () => Promise<unknown>;
+    republish?: () => Promise<unknown>;
   },
 ): Promise<{ removedRemote: boolean }> {
   let removedRemote = false;
@@ -507,7 +510,12 @@ export async function leaveFamily(
     )
       throw e;
   }
-  await deps.revokeDevice?.();
+  try {
+    await deps.revokeDevice?.();
+  } catch (e) {
+    if (removedRemote) await deps.republish?.().catch(() => undefined);
+    throw e;
+  }
   await forgetKey();
   clearSyncFiles();
   return { removedRemote };

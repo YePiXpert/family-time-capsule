@@ -29,8 +29,12 @@ import { isLocalBusy, isSyncRunning, markLocalBusy } from "../sync/status";
 import { conflictMediaIds } from "../sync/conflicts";
 import {
   forgetMergeHistory,
+  readBase,
   readConflicts,
+  readRemoteState,
   subscribeSyncFiles,
+  writeBase,
+  writeRemoteState,
 } from "../sync/state";
 import { changeAvgMs } from "./health";
 import { referencedMedia, yearKey } from "./model";
@@ -178,6 +182,27 @@ function librarySummary(lib: {
 }) {
   return `${Object.keys(lib.records).length} 段时光、${Object.keys(lib.albums).length} 本相册、${Object.keys(lib.media).length} 个附件`;
 }
+type MergeHistory = { base: Awaited<ReturnType<typeof readBase>>; seen: Record<string, string> } | null;
+/** 恢复前记下合并之基与已读清单（没加入家庭就没什么要记）；读不出来当作没有，不拦恢复。 */
+async function saveMergeHistory(): Promise<MergeHistory> {
+  try {
+    const remote = await readRemoteState();
+    return remote ? { base: await readBase(), seen: remote.seen } : null;
+  } catch {
+    return null;
+  }
+}
+/** 放不回就退回到恢复成功时的做法：下一轮没有基、把全家的清单整个重并一遍。 */
+async function putBackMergeHistory(history: MergeHistory): Promise<void> {
+  if (!history) return;
+  try {
+    writeBase(history.base);
+    const remote = await readRemoteState();
+    if (remote) writeRemoteState({ ...remote, seen: history.seen });
+  } catch {
+    // 见上。
+  }
+}
 /**
  * 完整备份与恢复共用的操作：一次只跑一个（本机备份、恢复、归档与同步共用互斥），
  * 进度、结果与错误落在调用页自己的状态行上。
@@ -285,6 +310,11 @@ function useBackupActions() {
           onPress: () => {
             void perform(async () => {
               let skipped = 0;
+              // 一起写的手机：换库之前先忘掉合并历史，下一轮把全家的清单重读一遍，把备份之后家人的改动并回来。
+              // 换完才忘的话，中间被杀掉就留着旧的基与已读清单，备份之后的记录一直回不来。
+              const before = store.get();
+              const history = await saveMergeHistory();
+              await forgetMergeHistory();
               try {
                 ({ skipped } = await restoreBackup(
                   store,
@@ -293,11 +323,13 @@ function useBackupActions() {
                   stoppable(),
                   conflictMediaIds(await readConflicts()),
                 ));
+              } catch (e) {
+                // 没换成、本机库原样：合并历史原样放回。没有基的那一轮是整个重并，本机还没发出去的资料改动可能输给家人的旧值。
+                if (store.get() === before) await putBackMergeHistory(history);
+                throw e;
               } finally {
                 discardPickedCopies(files);
               }
-              // 一起写的手机：下一轮把全家的清单重读一遍，把备份之后家人的改动并回来。
-              await forgetMergeHistory();
               setMessage(
                 skipped
                   ? `${done}有 ${skipped} 个照片或录音在恢复前就已找不到原件，「恢复前」那份备份里没有它们。`

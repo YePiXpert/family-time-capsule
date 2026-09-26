@@ -20,7 +20,7 @@ import {
   useTheme,
 } from "../local/ui";
 import { verifyRemoteBackup } from "../sync/engine";
-import { leaveFamily, readNewestManifest, startSharing } from "../sync/family";
+import { leaveFamily, readNewestManifest, runFamilySync, startSharing } from "../sync/family";
 import { bytesLabel } from "../sync/planner";
 import { clearSyncFiles, loadKey, unreadNotice } from "../sync/state";
 import { SyncCard } from "../sync/SyncCard";
@@ -219,8 +219,9 @@ export function FamilyScreen({ navigation }: Props<"Family">) {
       } catch (e) {
         if (stopped) return;
         setError(messageOf(e));
-        // 网络一时不通就接着等；其余（被取消、过期、解不开、钥匙串写不进）停下来让人看清楚。
-        if (!(e instanceof FamilyError && e.code === "NETWORK")) {
+        // 网络一时不通、服务一时出错就接着等（确认的回应丢了，下一次用存好的令牌再确认，见 pollJoin）；
+        // 其余（被取消、过期、解不开、钥匙串写不进）停下来让人看清楚。
+        if (!(e instanceof FamilyError && (e.code === "NETWORK" || (e.status ?? 0) >= 500))) {
           if (e instanceof FamilyError && (e.status === 404 || e.status === 409 || e.status === 410)) {
             openJoin.current = null;
             setStep({ kind: "join" });
@@ -304,14 +305,25 @@ export function FamilyScreen({ navigation }: Props<"Family">) {
           style: "destructive",
           onPress: () =>
             void run(async (signal) => {
-              if (overview && isLastAdminDevice(overview, family.me.deviceId))
+              // 撤下清单之后服务才判能不能退：页上那份设备表可能是旧的，先拿最新的核一遍，别撤了清单再被拒。
+              const current = overview ? await api.overview() : null;
+              if (current && isLastAdminDevice(current, family.me.deviceId))
                 throw new FamilyError(
                   "LAST_ADMIN_DEVICE",
                   "这是家里最后一台管理者手机。先给自己或另一位家人加一台管理者手机，再退出。",
                 );
               if (!claimSync()) throw new Error("正在同步，等它完成再试。");
               try {
-                await leaveFamily({ transport: createTransport(), signal, revokeDevice: () => api.leave() });
+                await leaveFamily({
+                  transport: createTransport(),
+                  signal,
+                  revokeDevice: () => api.leave(),
+                  // 还是没让退：马上把这台的那一份发回去，家人那边不缺它。
+                  republish: async () => {
+                    const key = await loadKey();
+                    if (key) await runFamilySync(store, { transport: createTransport(), key, signal });
+                  },
+                });
                 await forgetToken();
                 await forgetDeviceKey();
               } finally {
