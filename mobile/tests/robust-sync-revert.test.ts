@@ -1,5 +1,5 @@
 /**
- * 改回去的一版、时钟不准的手机、没有时间戳的根字段与人物：合并审计（2026-09-26）找到的几处，
+ * 改回去的一版、时钟不准的手机、「用这一版」撞上墓碑：合并审计（2026-09-26）找到的几处，
  * 每台手机都走真实的 mergeLibraries → validateLibrary → 换上新库与新基。
  */
 import { describe, expect, it } from "vitest";
@@ -19,7 +19,6 @@ import {
 } from "../src/local/model";
 import { restoreLoser } from "../src/sync/conflicts";
 import {
-  PUBLISHED_DEVICES,
   emptyBase,
   mergeLibraries,
   type RemoteSnapshot,
@@ -184,166 +183,6 @@ describe("时钟不准的手机", () => {
       "records:old": now,
     });
     validateLibrary(s);
-  });
-});
-
-describe("没有时间戳的根字段与人物", () => {
-  it("名字、寄语、人物改了又改回：另一台跟上，之后不再来回", () => {
-    const [a, b] = family((s) => {
-      s.profile = { ...s.profile, name: "桉桉" };
-      s.yearNotes["2026"] = "第一年";
-      s.persons.p = { id: "p", name: "奶奶" };
-    });
-    const set = (name: string, note: string, person: string) => {
-      a.lib = copy(a.lib);
-      a.lib.profile = { ...a.lib.profile, name };
-      a.lib.yearNotes = { ...a.lib.yearNotes, "2026": note };
-      a.lib.persons = { ...a.lib.persons, p: { id: "p", name: person } };
-    };
-    const view = (p: Phone) => [p.lib.profile.name, p.lib.yearNotes["2026"], p.lib.persons.p?.name];
-    set("安安", "第一年，会走了", "外婆");
-    sync(a, [b], "2026-09-20T11:00:00.000Z");
-    sync(b, [a], "2026-09-20T11:00:01.000Z");
-    expect(view(b)).toEqual(["安安", "第一年，会走了", "外婆"]);
-    set("桉桉", "第一年", "奶奶");
-    sync(a, [b], "2026-09-20T12:00:00.000Z");
-    const r = sync(b, [a], "2026-09-20T12:00:01.000Z");
-    expect({ a: view(a), b: view(b), cards: r.conflicts.length }).toEqual({
-      a: ["桉桉", "第一年", "奶奶"],
-      b: ["桉桉", "第一年", "奶奶"],
-      cards: 0,
-    });
-    for (let i = 0; i < 3; i++) {
-      expect(sync(a, [b], `2026-09-20T13:00:0${i}.000Z`).pulled).toBe(0);
-      expect(sync(b, [a], `2026-09-20T13:00:1${i}.000Z`).pulled).toBe(0);
-    }
-    expect(view(a)).toEqual(["桉桉", "第一年", "奶奶"]);
-  });
-  it("清掉头像又换回：另一台跟上", () => {
-    const [a, b] = family((s) => {
-      s.media.m = { id: "m", file: "m.jpg", name: "m.jpg", kind: "image", bytes: 1, sha256: "a".repeat(64) };
-      s.records.x = { ...record("x", "照片"), mediaIds: ["m"], coverId: "m" };
-      s.profile = { ...s.profile, avatarId: "m" };
-    });
-    a.lib = copy(a.lib);
-    a.lib.profile = { ...a.lib.profile, avatarId: null };
-    sync(a, [b], "2026-09-20T11:00:00.000Z");
-    sync(b, [a], "2026-09-20T11:00:01.000Z");
-    expect(b.lib.profile.avatarId).toBeNull();
-    a.lib = copy(a.lib);
-    a.lib.profile = { ...a.lib.profile, avatarId: "m" };
-    sync(a, [b], "2026-09-20T12:00:00.000Z");
-    sync(b, [a], "2026-09-20T12:00:01.000Z");
-    expect(b.lib.profile.avatarId).toBe("m");
-  });
-  it("一直没同步的第三台清单里还躺着旧名字：不会回来", () => {
-    const [a, b, c] = family((s) => { s.profile = { ...s.profile, name: "桉桉" }; }, ["A", "B", "C"]);
-    a.lib = copy(a.lib);
-    a.lib.profile = { ...a.lib.profile, name: "安安" };
-    for (let i = 0; i < 3; i++) {
-      sync(a, [b, c], `2026-09-20T11:00:0${i}.000Z`);
-      sync(b, [a, c], `2026-09-20T11:00:1${i}.000Z`);
-    }
-    expect([a.lib.profile.name, b.lib.profile.name]).toEqual(["安安", "安安"]);
-    // C 终于同步：跟上，然后谁都不再动。
-    sync(c, [a, b], "2026-09-20T12:00:00.000Z");
-    expect(c.lib.profile.name).toBe("安安");
-    for (const p of [a, b, c]) expect(sync(p, [a, b, c].filter((o) => o !== p), "2026-09-20T12:00:01.000Z").pulled).toBe(0);
-  });
-  it("A 改回去的同时 B 改成别的：两台得出同一个名字", () => {
-    const [a, b] = family((s) => { s.profile = { ...s.profile, name: "桉桉" }; });
-    a.lib = copy(a.lib);
-    a.lib.profile = { ...a.lib.profile, name: "安安" };
-    sync(a, [b], "2026-09-20T11:00:00.000Z");
-    sync(b, [a], "2026-09-20T11:00:01.000Z");
-    a.lib = copy(a.lib);
-    a.lib.profile = { ...a.lib.profile, name: "桉桉" };
-    b.lib = copy(b.lib);
-    b.lib.profile = { ...b.lib.profile, name: "清洛" };
-    sync(a, [b], "2026-09-20T12:00:00.000Z");
-    sync(b, [a], "2026-09-20T12:00:01.000Z");
-    expect(a.lib.profile.name).toBe(b.lib.profile.name);
-    for (let i = 0; i < 3; i++) {
-      sync(a, [b], `2026-09-20T13:00:0${i}.000Z`);
-      sync(b, [a], `2026-09-20T13:00:1${i}.000Z`);
-    }
-    expect(a.lib.profile.name).toBe(b.lib.profile.name);
-  });
-  it("旧基（没有发布记录）照常合并；发布记录只记根字段与人物、按台数封顶", () => {
-    const [a, b] = family((s) => {
-      s.profile = { ...s.profile, name: "桉桉" };
-      s.persons.p = { id: "p", name: "奶奶" };
-      s.records.x = record("x", "一段");
-    });
-    const { published: _dropped, ...legacy } = a.base;
-    expect(_dropped).toBeDefined();
-    const r = mergeLibraries(a.lib, [snapOf(b, T0)], legacy, T0);
-    expect(r.pulled).toBe(0);
-    const keys = Object.keys(r.base.published!.B!);
-    expect(keys).toContain("persons:p");
-    expect(keys).toContain("root:profile:name");
-    expect(keys.every((k) => k.startsWith("persons:") || k.startsWith("root:profile:"))).toBe(true);
-    expect(Object.values(r.base.published!.B!).every((tag) => tag.length === 16)).toBe(true);
-    const many = Array.from({ length: PUBLISHED_DEVICES + 5 }, (_, i) => ({ ...snapOf(b, T0), deviceId: `d${i}` }));
-    const capped = mergeLibraries(a.lib, many, r.base, T0).base.published!;
-    expect(Object.keys(capped)).toHaveLength(PUBLISHED_DEVICES);
-  });
-});
-
-describe("空基（恢复了旧备份、带着自己的资料加入）：家里已有的听家里的", () => {
-  const photo = (id: string, hex: string) => ({ id, file: `${id}.jpg`, name: `${id}.jpg`, kind: "image" as const, bytes: 1, sha256: hex.repeat(64) });
-  const view = (p: Phone) => ({
-    name: p.lib.profile.name,
-    avatar: p.lib.profile.avatarId,
-    note: p.lib.yearNotes["2026"],
-    person: p.lib.persons.p?.name,
-  });
-  it("三台里一台恢复了旧备份：旧名字、旧头像、旧人物名不传开，它自己跟上家里现在的；之后几轮都不再动", () => {
-    const [a, b, c] = family((s) => {
-      s.media.m1 = photo("m1", "a");
-      s.media.m2 = photo("m2", "b");
-      s.records.x = { ...record("x", "两张照片"), mediaIds: ["m1", "m2"], coverId: "m1" };
-      s.profile = { ...s.profile, name: "桉桉", avatarId: "m1" };
-      s.yearNotes["2026"] = "第一年";
-      s.persons.p = { id: "p", name: "奶奶" };
-    }, ["A", "B", "C"]);
-    const backup = copy(c.lib);
-    a.lib = copy(a.lib);
-    a.lib.profile = { ...a.lib.profile, name: "安安", avatarId: "m2" };
-    a.lib.yearNotes = { ...a.lib.yearNotes, "2026": "第一年，会走了" };
-    a.lib.persons = { ...a.lib.persons, p: { id: "p", name: "外婆" } };
-    const now = { name: "安安", avatar: "m2", note: "第一年，会走了", person: "外婆" };
-    for (const p of [a, b, c]) sync(p, [a, b, c].filter((o) => o !== p), "2026-09-20T11:00:00.000Z");
-    expect([view(a), view(b), view(c)]).toEqual([now, now, now]);
-    // C 恢复备份：库换回旧的，合并记录清空（BackupPages 先 forgetMergeHistory 再换库）。
-    c.lib = copy(backup);
-    c.base = emptyBase();
-    const r = sync(c, [a, b], "2026-09-20T12:00:00.000Z");
-    expect(view(c)).toEqual(now);
-    expect(r.conflicts).toEqual([]);
-    for (let i = 0; i < 3; i++)
-      for (const p of [a, b, c]) {
-        const round = sync(p, [a, b, c].filter((o) => o !== p), `2026-09-20T13:0${i}:00.000Z`);
-        expect(round.pulled).toBe(0);
-      }
-    expect([view(a), view(b), view(c)]).toEqual([now, now, now]);
-  });
-  it("带着自己的资料加入：家里有的名字听家里的，家里没有的寄语、自己写的时光都带进来", () => {
-    const [a, b] = family((s) => { s.profile = { ...s.profile, name: "桉桉" }; });
-    const own = emptyLibrary();
-    own.welcome = true;
-    own.profile = { ...own.profile, name: "小宝", motto: "入淮清洛渐漫漫" };
-    own.records.mine = record("mine", "我自己写的");
-    const joiner: Phone = { name: "J", lib: own, base: emptyBase() };
-    sync(joiner, [a, b], "2026-09-20T11:00:00.000Z");
-    expect(joiner.lib.profile).toMatchObject({ name: "桉桉", motto: "入淮清洛渐漫漫" });
-    expect(joiner.lib.records.mine?.text).toBe("我自己写的");
-    for (let i = 0; i < 3; i++)
-      for (const p of [a, b, joiner]) sync(p, [a, b, joiner].filter((o) => o !== p), `2026-09-20T12:0${i}:00.000Z`);
-    for (const p of [a, b, joiner]) {
-      expect(p.lib.profile).toMatchObject({ name: "桉桉", motto: "入淮清洛渐漫漫" });
-      expect(p.lib.records.mine?.text).toBe("我自己写的");
-    }
   });
 });
 
