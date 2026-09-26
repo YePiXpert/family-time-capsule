@@ -1097,3 +1097,124 @@ it("只改了年度寄语或宝宝资料（库根，不是实体）也要重新�
   await p.family.runFamilySync(p.store, deps);
   expect(publish).not.toHaveBeenCalled();
 });
+// 「没变就不发布」的指纹只看合并的根字段，漏了装订时刻与墓碑：只改了它们的手机一直不发布
+it.each(["装订了年度册", "多了一块墓碑"])("只%s：照样重新发布，家人那边并得到", async (what) => {
+  const { receiver: p, sender, remote, deps } = await seeded();
+  const first = await p.family.joinFamily(p.store, key, deps);
+  await p.store.change((s) => {
+    if (what === "装订了年度册") s.yearBooksBoundAt = { "2025": "2026-01-02T00:00:00.000Z" };
+    else s.tombstones = { ...s.tombstones, "records:r-gone": "2026-09-21T00:00:00.000Z" };
+  });
+  const publish = vi.spyOn(deps.transport, "putManifest");
+  const second = await p.family.runFamilySync(p.store, deps);
+  expect(publish).toHaveBeenCalledTimes(1);
+  expect(second.lastPush!.entitiesSha).not.toBe(first.lastPush!.entitiesSha);
+  sender.activate();
+  await sender.family.joinFamily(sender.store, key, { transport: remote.client("爸爸手机") });
+  if (what === "装订了年度册")
+    expect(sender.store.get().yearBooksBoundAt).toEqual({ "2025": "2026-01-02T00:00:00.000Z" });
+  else expect(sender.store.get().tombstones?.["records:r-gone"]).toBe("2026-09-21T00:00:00.000Z");
+  // 再同步一次：没有新改动就不再发布。
+  p.activate();
+  publish.mockClear();
+  await p.family.runFamilySync(p.store, deps);
+  expect(publish).not.toHaveBeenCalled();
+});
+// 本机设置（每天的小问题、默认落款、锁、外观）、选片、提醒卡、收到的分享、导出时刻都随清单发给了全家
+it("本机自己的设置与状态不进家里的清单；只改它们不重新发布", async () => {
+  const { receiver: p, deps } = await seeded();
+  await p.add("c", "这台手机的一段", "妈妈");
+  await p.store.change((s) => {
+    s.settings = {
+      theme: "dark",
+      largeText: true,
+      lockEnabled: true,
+      by: "妈妈",
+      dailyQuestion: { requestedDay: "2026-09-20", day: "2026-09-20", question: "只给这台手机的问题", asked: [] },
+    };
+    s.selections.q = { id: "q", albumId: null, selected: ["r-c"], month: "2026-09", offset: 0, name: "九月", coverId: "m-c" };
+    s.nudgeClosedAt = { book: "2026-09-20T00:00:00.000Z" };
+    s.receivedShares = ["share-1"];
+    s.lastExportAt = "2026-09-20T00:00:00.000Z";
+  });
+  const first = await p.family.joinFamily(p.store, key, deps);
+  const { meta, entities } = await p.engine.fetchManifestOf((await deps.transport.getManifest())!, deps);
+  const { decodeLibraryV2 } = await import("../src/local/backup-format");
+  const published = decodeLibraryV2(meta, entities);
+  // 旧版解码按空库补齐缺的键再校验：设备字段发的是空库的默认值，键都在。
+  expect(meta.root).toMatchObject({ settings: { theme: "auto", largeText: false }, receivedShares: [], revision: 0 });
+  expect(Object.keys(meta.root).sort()).toEqual(
+    ["profile", "receivedShares", "revision", "settings", "version", "welcome", "yearCovers", "yearNotes"],
+  );
+  expect(published.selections).toEqual({});
+  expect(Object.keys(published.records).sort()).toEqual(["r-a", "r-b", "r-c"]);
+  expect(Object.keys(published.media).sort()).toEqual(["m-a", "m-b", "m-c"]);
+  // 本机的一样没动。
+  expect(p.store.get().settings.by).toBe("妈妈");
+  expect(Object.keys(p.store.get().selections)).toEqual(["q"]);
+  // 只改本机设置：发出去的内容没变，不重新发布。
+  await p.store.change((s) => {
+    s.settings = { ...s.settings, theme: "light", by: "外婆" };
+    s.lastExportAt = "2026-09-25T00:00:00.000Z";
+  });
+  const publish = vi.spyOn(deps.transport, "putManifest");
+  const second = await p.family.runFamilySync(p.store, deps);
+  expect(publish).not.toHaveBeenCalled();
+  expect(second.lastPush).toEqual(first.lastPush);
+});
+// 清单发布之后回收失败，整轮报错、下一轮再发布一次
+it("清单已发布、回收失败：这一轮照常算成功，下一轮不再重发", async () => {
+  const { receiver: p, deps } = await seeded();
+  await p.family.joinFamily(p.store, key, deps);
+  await p.add("c", "新的一段", "妈妈");
+  const { SyncError } = await import("../src/sync/transport");
+  const prune = vi.spyOn(deps.transport, "prune").mockRejectedValueOnce(new SyncError("NETWORK", "现在连不上服务。"));
+  const publish = vi.spyOn(deps.transport, "putManifest");
+  const done = await p.family.runFamilySync(p.store, deps);
+  expect(prune).toHaveBeenCalledOnce();
+  expect(publish).toHaveBeenCalledOnce();
+  expect(done.lastError).toBeUndefined();
+  expect(done.lastPush!.manifestSha).toBe(done.seen[done.deviceId!]);
+  publish.mockClear();
+  await p.family.runFamilySync(p.store, deps);
+  expect(publish).not.toHaveBeenCalled();
+});
+// 退出时先撤下清单再作废设备：服务拒绝作废时，这台留在家里却没有清单
+it("撤下清单后服务没让退出：马上发回一份，钥匙与同步状态照旧；发不回也照样报原来的错", async () => {
+  const { receiver: p, remote, deps } = await seeded();
+  const joined = await p.family.joinFamily(p.store, key, deps);
+  const error = Object.assign(new Error("这是最后一台管理者手机。"), { code: "LAST_ADMIN_DEVICE" });
+  const republish = vi.fn(async () => {
+    expect(remote.manifests.has("妈妈手机")).toBe(false);
+    await p.family.runFamilySync(p.store, deps);
+  });
+  await expect(
+    p.family.leaveFamily({ ...deps, revokeDevice: async () => { throw error; }, republish }),
+  ).rejects.toBe(error);
+  expect(republish).toHaveBeenCalledOnce();
+  expect(remote.manifests.has("妈妈手机")).toBe(true);
+  expect(await p.state.loadKey()).toEqual(key);
+  expect((await p.state.readRemoteState())?.lastPush?.entitiesSha).toBe(joined.lastPush!.entitiesSha);
+  // 发回也失败（例如断网）：不吞掉原来的错误，下一轮同步照常整份发布。
+  const failing = vi.fn(async () => { throw new Error("断网"); });
+  await expect(
+    p.family.leaveFamily({ ...deps, revokeDevice: async () => { throw error; }, republish: failing }),
+  ).rejects.toBe(error);
+  expect(failing).toHaveBeenCalledOnce();
+  expect(remote.manifests.has("妈妈手机")).toBe(false);
+  const publish = vi.spyOn(deps.transport, "putManifest");
+  await p.family.runFamilySync(p.store, deps);
+  expect(publish).toHaveBeenCalledOnce();
+  expect(remote.manifests.has("妈妈手机")).toBe(true);
+});
+it("清单没撤下（远端本来就没有）又没退成：不发回", async () => {
+  const { receiver: p, deps } = await seeded();
+  await p.family.joinFamily(p.store, key, deps);
+  await deps.transport.deleteManifest("妈妈手机");
+  const republish = vi.fn(async () => {});
+  const error = new Error("退出未确认");
+  await expect(
+    p.family.leaveFamily({ ...deps, revokeDevice: async () => { throw error; }, republish }),
+  ).rejects.toBe(error);
+  expect(republish).not.toHaveBeenCalled();
+});

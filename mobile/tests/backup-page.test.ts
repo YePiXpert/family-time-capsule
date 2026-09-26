@@ -32,6 +32,11 @@ const env = vi.hoisted(() => {
     alerts: [] as [string, string, { text: string; onPress?: () => void }[]][],
     running: false, joined: false, localBusy: false,
     log: [] as string[],
+    // 本机库：恢复换库就是换掉 lib 这个对象。
+    lib: {} as object,
+    // 同步状态文件：合并之基与已读清单。
+    remote: null as { seen: Record<string, string> } | null,
+    base: { version: 1, merged: {}, known: {} } as unknown,
   };
 });
 vi.mock("react", () => ({
@@ -58,7 +63,7 @@ vi.mock("expo-document-picker", () => ({ getDocumentAsync: vi.fn() }));
 vi.mock("expo-file-system", () => ({ File: env.File }));
 vi.mock("../src/local/context", () => ({
   useLibrary: () => ({ media: {} }),
-  useStore: () => ({ get: () => ({}), change: vi.fn() }),
+  useStore: () => ({ get: () => env.lib, change: vi.fn() }),
   useSyncStatus: () => ({ running: env.running, joined: env.joined }),
 }));
 vi.mock("../src/local/navigation", () => ({ useNav: () => ({ navigate: vi.fn() }) }));
@@ -90,7 +95,14 @@ vi.mock("../src/sync/status", () => ({
 }));
 vi.mock("../src/sync/conflicts", () => ({ conflictMediaIds: () => new Set<string>() }));
 vi.mock("../src/sync/state", () => ({
-  forgetMergeHistory: vi.fn(async () => {}),
+  forgetMergeHistory: vi.fn(async () => {
+    env.base = { version: 1, merged: {}, known: {} };
+    if (env.remote) env.remote = { ...env.remote, seen: {} };
+  }),
+  readBase: vi.fn(async () => env.base),
+  writeBase: vi.fn((base: unknown) => { env.base = base; }),
+  readRemoteState: vi.fn(async () => env.remote),
+  writeRemoteState: vi.fn((state: { seen: Record<string, string> }) => { env.remote = state; }),
   readConflicts: async () => [],
   subscribeSyncFiles: () => () => {},
 }));
@@ -162,6 +174,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   env.slots = []; env.cursor = 0; env.alerts = []; env.log = []; env.disk.clear();
   env.running = false; env.joined = false; env.localBusy = false;
+  env.lib = {}; env.remote = null; env.base = { version: 1, merged: {}, known: {} };
   page = Restore;
   for (const uri of PICKED) env.disk.add(uri);
   picker.mockResolvedValue({ canceled: false, assets: PICKED.map((uri) => ({ uri })) } as never);
@@ -200,7 +213,7 @@ it("#10 恢复本身可以停止：停止信号传给 restoreBackup，页上报�
   await settled();
   expect(env.slots[MESSAGE]).toBe("已停止。");
   expect(env.slots[ERROR]).toBe("");
-  expect(syncState.forgetMergeHistory).not.toHaveBeenCalled();
+  expect(syncState.writeBase).not.toHaveBeenCalled();
 });
 
 // #11 选择器复制进缓存的备份从不删除（页面这一半；函数本身见 backup-picked.test.ts）
@@ -232,7 +245,48 @@ it("#11 恢复失败也删掉选择器副本，错误照常显示", async () => 
   await confirmRestore();
   expect(pickedUris(discard.mock.calls[0])).toEqual(PICKED);
   expect(env.slots[ERROR]).toBe("空间不够");
-  expect(syncState.forgetMergeHistory).not.toHaveBeenCalled();
+  expect(syncState.writeBase).not.toHaveBeenCalled();
+});
+
+// 恢复换库之后才忘合并历史：中间被杀掉就留着旧基与已读清单，备份之后家人的记录一直并不回来
+const HISTORY = { version: 1, merged: { records: { r: "fp" } }, known: {} };
+it("一起写的手机恢复：换库之前先忘掉合并历史，恢复成功后不再放回", async () => {
+  env.remote = { seen: { d2: "sha-d2" } };
+  env.base = HISTORY;
+  restoreBackup.mockImplementationOnce(async () => {
+    // 换库这一刻合并历史已经忘掉了。
+    expect({ seen: env.remote?.seen, base: env.base }).toEqual({ seen: {}, base: { version: 1, merged: {}, known: {} } });
+    env.lib = { restored: true };
+    return new env.File("backups/恢复前.xmb") as never;
+  });
+  await pickFromFiles();
+  await confirmRestore();
+  expect(env.slots[ERROR]).toBe("");
+  expect(vi.mocked(syncState.forgetMergeHistory).mock.invocationCallOrder[0]!).toBeLessThan(restoreBackup.mock.invocationCallOrder[0]!);
+  expect({ seen: env.remote?.seen, base: env.base }).toEqual({ seen: {}, base: { version: 1, merged: {}, known: {} } });
+  expect(env.slots[MESSAGE]).toBe("恢复完成。恢复前的内容也留了一份在下面。");
+});
+it("一起写的手机恢复失败、库没换：合并之基与已读清单原样放回", async () => {
+  env.remote = { seen: { d2: "sha-d2" } };
+  env.base = HISTORY;
+  await pickFromFiles();
+  restoreBackup.mockRejectedValueOnce(new Error("空间不够"));
+  await confirmRestore();
+  expect(env.slots[ERROR]).toBe("空间不够");
+  expect(syncState.forgetMergeHistory).toHaveBeenCalledOnce();
+  expect({ seen: env.remote?.seen, base: env.base }).toEqual({ seen: { d2: "sha-d2" }, base: HISTORY });
+});
+it("一起写的手机恢复：库已换掉才报错，合并历史不放回", async () => {
+  env.remote = { seen: { d2: "sha-d2" } };
+  env.base = HISTORY;
+  await pickFromFiles();
+  restoreBackup.mockImplementationOnce(async () => {
+    env.lib = { restored: true };
+    throw new Error("收拾时出错");
+  });
+  await confirmRestore();
+  expect(env.slots[ERROR]).toBe("收拾时出错");
+  expect({ seen: env.remote?.seen, base: env.base }).toEqual({ seen: {}, base: { version: 1, merged: {}, known: {} } });
 });
 
 // #19 已加入家庭时恢复旧备份的确认框没说下次同步会并回之后的改动
