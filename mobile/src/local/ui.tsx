@@ -1761,7 +1761,7 @@ export function Photo({
   return (
     <Image
       accessibilityLabel={label ?? "照片"}
-      source={{ uri: thumb ? thumb.uri : mediaUri(media) }}
+      source={{ uri: thumb ? thumb.uri : media.preview && !new File(mediaDirectory, media.file).exists ? media.preview : mediaUri(media) }}
       resizeMode={contain ? "contain" : "cover"}
       onError={() => {
         if (thumb) setThumbFailed(true);

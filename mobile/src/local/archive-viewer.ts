@@ -171,6 +171,15 @@ input.search{width:100%;padding:10px 12px;border:1px solid var(--line);border-ra
       }).join("") + "</div></section>";
     }).join("");
   }
+  function renderStories() {
+    var stories = lib.yearStories || {};
+    return Object.keys(stories).sort().reverse().map(function (year) {
+      var story = stories[year];
+      return '<article class="card"><h3>' + esc(story.title) + '</h3><p class="meta">' + esc(year) + ' 年 · AI 整理' + (story.edited ? ' · 家人已修改' : '') + '</p>' + story.paragraphs.map(function(p) {
+        return '<p class="text">' + esc(p.text) + '</p>';
+      }).join('') + '</article>';
+    }).join('');
+  }
   function renderNotes() {
     var years = Object.keys(lib.yearNotes).sort().reverse();
     if (!years.length) return '<div class="empty">没有寄语。</div>';
@@ -189,6 +198,7 @@ input.search{width:100%;padding:10px 12px;border:1px solid var(--line);border-ra
     ["letters", "时间胶囊", function () { return lib.letters.length > 0; }],
     ["albums", "相册", function () { return lib.albums.length > 0; }],
     ["series", "时光系列", function () { return lib.series.length > 0; }],
+    ["stories", "年度故事", function () { return Object.keys(lib.yearStories || {}).length > 0; }],
     ["notes", "寄语", function () { return Object.keys(lib.yearNotes).length > 0; }],
     ["persons", "人物", function () { return lib.persons.length > 0; }]
   ];
@@ -212,7 +222,7 @@ input.search{width:100%;padding:10px 12px;border:1px solid var(--line);border-ra
     }).join("");
     el("side").innerHTML = renderSide();
     var body = state.tab === "letters" ? renderLetters() : state.tab === "albums" ? renderAlbums() : state.tab === "series" ? renderSeries() :
-      state.tab === "notes" ? renderNotes() : state.tab === "persons" ? renderPersons() : renderRecords();
+      state.tab === "stories" ? renderStories() : state.tab === "notes" ? renderNotes() : state.tab === "persons" ? renderPersons() : renderRecords();
     el("content").innerHTML = body;
   }
   function go(patch) { for (var k in patch) state[k] = patch[k]; render(); }

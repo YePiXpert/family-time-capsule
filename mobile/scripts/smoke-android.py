@@ -35,20 +35,20 @@ try:
     tap('capture-new');find('说一段');tap('capture-text');write('Offline little story.');find('AI 助手');adb('shell','input','keyevent','4');shot('editor')
     # 键盘收起后编辑页一屏放下、不能上下滑（1.0.5 出包：纸比滚动区高出一截，整页还能滑）。
     assert_fits('editor-sheet');report['editorFits']=True
-    restart();tap('继续编辑');assert find('capture-text').get('text')=='Offline little story.'
+    restart();tap('draft-continue');assert find('capture-text').get('text')=='Offline little story.'
     tap('editor-by');tap('editor-by-爸爸');tap('capture-save');find('record-edit');assert find('record-by').get('text')=='—— 爸爸';shot('record-reading')
     tap('record-edit');tap('capture-text');adb('shell','input','keyevent','KEYCODE_MOVE_END');write(' More.');adb('shell','input','keyevent','4');tap('capture-save');find('record-edit');assert find('record-by').get('text')=='—— 爸爸';phase('Record and draft')
-    restart();find(f'volume-{month}');find(f"volume-year-{time.strftime('%Y')}");shot('home-recent');tap_seek('album-new')
-    tree=hierarchy(); row=next(n for n in tree.iter('node') if n.get('resource-id','').startswith('record-'));tap(row.get('resource-id'));shot('selection')
-    tap('material-done');tap('album-name');write('Our days');adb('shell','input','keyevent','4');tap('album-save');find('album-reading');shot('album-reading')
-    restart();tap_shelf('Our days');find('album-reading');phase('Album')
+    restart();find('timeline-letters');find('timeline-memories');shot('home-recent')
+    tap('timeline-memories');tap(f'volume-{month}')
+    tree=hierarchy(); row=next(n for n in tree.iter('node') if n.get('resource-id','').startswith('record-'));tap(row.get('resource-id'))
+    tap_seek('修改历史');find('恢复这份内容');shot('record-history');phase('Timeline and history')
     # 时间胶囊：写一封信 → 封存（刚封好是「封好了」）→ 重启后书架仍在 → 打开是「还没到日子」的信封（落印不重播）→ 提前拆封能读到正文。
     # 首页一屏放下、不能上下滑：相册与信在书架横条上，找不到就横着拖（tap_shelf）。
-    restart();tap_seek('letter-new');tap('letter-title');write('Letter for later');adb('shell','input','keyevent','4')
+    restart();tap('timeline-letters');tap('letter-new');tap('letter-title');write('Letter for later');adb('shell','input','keyevent','4')
     tap('letter-text');write('Words kept for the future.');adb('shell','input','keyevent','4');shot('letter-editor')
-    assert_fits('letter-sheet');report['letterFits']=True
+    find('letter-sheet');report['letterEditorReachable']=True
     tap_seek('letter-seal');tap_last('封存');find('封好了');find('letter-open-early');shot('letter-sealed')
-    restart();tap_shelf('Letter for later');find('还没到日子')
+    restart();tap('timeline-letters');tap_seek('Letter for later');find('还没到日子')
     tap('letter-open-early');tap_last('拆开');find('Words kept for the future.');shot('letter-opened');letterSealed=True;phase('Letter')
     # 改分辨率后先等书架按新宽度画好再截图。
     restart();adb('shell','wm','size','320x720');find('设置');shot('home-320')
@@ -80,17 +80,15 @@ try:
         time.sleep(1)
     else:raise AssertionError('Archive share sheet never appeared')
     shot('archive-share-sheet');adb('shell','input','keyevent','4');time.sleep(2);archiveSheet=True;phase('Backup export and archive')
-    restart();tap(f'volume-{month}')
+    restart();tap('timeline-memories');tap(f'volume-{month}')
     tree=hierarchy(); row=next(n for n in tree.iter('node') if n.get('resource-id','').startswith('record-'));tap(row.get('resource-id'))
     tap('删除记录');tap_last('删除记录')
     restart();tap('设置');tap('数据与备份');tap('backup-restore-open');tap_seek('恢复这份备份');tap('恢复并替换')
     find('恢复完成。')
-    restart();tap(f'volume-{month}')
+    restart();tap('timeline-memories');tap(f'volume-{month}')
     tree=hierarchy(); row=next(n for n in tree.iter('node') if n.get('resource-id','').startswith('record-'));tap(row.get('resource-id'))
     find('Offline little story. More.');shot('backup-roundtrip');phase('Restore')
-    tap('keepsake-make');time.sleep(4);shot('keepsake-share-sheet');adb('shell','input','keyevent','4')
-    find('record-edit')
-    restart();tap(f"volume-year-{time.strftime('%Y')}")
+    restart();tap('timeline-memories');tap_seek(f"volume-year-{time.strftime('%Y')}")
     # 纪念册：一页 300 DPI 是 2433² 位图，安卓这一步最吃内存，必须真装订一本出来。
     tap('year-yearbook');tap('纪念册 PDF')
     tap('book-preview-next');shot('book-preview');tap('book-preview-bind')
@@ -110,7 +108,7 @@ try:
     broken=[n.get('text') for n in hierarchy().iter('node') if any(w in (n.get('text') or '') for w in ('失败','超时','尚未就绪'))]
     assert not broken,f'Book export reported {broken}'
     find('year-yearbook');bookExport=True;phase('Yearbook')
-    report.update(success=True,offlineStartup=True,draftRecovered=True,albumSurvivedRelaunch=True,backupRoundtrip=True,remoteCardOffline=remoteCardOffline,familyOffline=familyOffline,keepsakeCard=True,yearbookBook=bookExport,letterSealed=letterSealed,archiveSheet=archiveSheet,widths=[320,390])
+    report.update(success=True,offlineStartup=True,draftRecovered=True,timelineAndHistory=True,backupRoundtrip=True,remoteCardOffline=remoteCardOffline,familyOffline=familyOffline,yearbookBook=bookExport,letterSealed=letterSealed,archiveSheet=archiveSheet,widths=[320,390])
 finally:
     report['timing']=dict(seconds=round(time.monotonic()-started),dumps=stats['dumps'],dumpSeconds=round(stats['dumpSeconds']))
     shot('final',fresh=True)

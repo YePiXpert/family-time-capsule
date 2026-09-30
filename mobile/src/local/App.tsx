@@ -1,3 +1,9 @@
+import { useImportantDayNotifications } from "./notifications";
+import { StoryScreen } from "./StoryScreen";
+import { useAnnualStories } from "../ai/stories";
+import { HistoryScreen, LetterRevision } from "./HistoryScreen";
+import { Timeline as Shelf, Memories, LetterInbox } from "./Timeline";
+import { useAttachmentDownloads } from "../sync/attachments";
 import { Conflicts } from "../sync/Conflicts";
 import { useSyncStatusValue } from "../sync/status";
 import { useAutoSync } from "../sync/auto";
@@ -71,7 +77,7 @@ import { Month } from "./Home";
 import { Year } from "./Year";
 import { SearchScreen } from "./SearchScreen";
 import { RecapScreen } from "./RecapScreen";
-import { Firsts, Shelf, TitlePage } from "./Shelf";
+import { Firsts, TitlePage } from "./Shelf";
 import { AlbumScreen, Picker, AlbumDetails } from "./Albums";
 import { People } from "./People";
 import { Settings, Profile, Appearance } from "./Settings";
@@ -154,6 +160,8 @@ function Root() {
   const store = useStore();
   const syncStatus = useSyncStatusValue();
   useAutoSync(store);
+  useAttachmentDownloads();
+  useImportantDayNotifications(store);
   const welcome = useLibraryValue((l) => l.welcome),
     lockEnabled = useLibraryValue((l) => l.settings.lockEnabled === true),
     s = useStyles(),
@@ -178,6 +186,7 @@ function Root() {
     [locked, setLocked] = useState(lockEnabled),
     // iOS 切到多任务界面前先 inactive、快照在进后台时拍：先盖一层纸面，快照里不露内容。
     [covered, setCovered] = useState(false);
+  useAnnualStories(store, syncStatus, locked);
   useEffect(() => {
     const sub = AppState.addEventListener("change", (status) => {
       if (!lockEnabled) return;
@@ -299,6 +308,7 @@ function Root() {
           </View>
         ) : null}
         <Stack.Navigator
+          initialRouteName="Shelf"
           screenOptions={{
             // 原生页头下线：返回与标题由 Page 基元的页内顶栏绘制（见 DESIGN.md 统一规则）。
             headerShown: false,
@@ -311,7 +321,12 @@ function Root() {
             fullScreenGestureEnabled: false,
           }}
         >
-          <Stack.Screen name="Shelf" component={Shelf} />
+          <Stack.Screen name="Story" component={StoryScreen} />
+          <Stack.Screen name="History" component={HistoryScreen} />
+        <Stack.Screen name="LetterRevision" component={LetterRevision} />
+        <Stack.Screen name="Memories" component={Memories} />
+        <Stack.Screen name="Letters" component={LetterInbox} />
+        <Stack.Screen name="Shelf" component={Shelf} />
           <Stack.Screen name="Search" component={SearchScreen} />
           <Stack.Screen name="Month" component={Month} />
           <Stack.Screen name="Year" component={Year} />

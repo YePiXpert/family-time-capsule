@@ -74,6 +74,7 @@ vi.mock("expo-audio", () => ({
   AudioModule: {}, RecordingPresets: {}, requestRecordingPermissionsAsync: vi.fn(), setAudioModeAsync: vi.fn(),
 }));
 vi.mock("expo-file-system", () => ({ File: class {}, Paths: {} }));
+vi.mock("expo-image-picker", () => ({ requestMediaLibraryPermissionsAsync: vi.fn(), launchImageLibraryAsync: vi.fn() }));
 vi.mock("../src/local/files", () => ({ preserveMedia: vi.fn(), verifyMedia: vi.fn() }));
 vi.mock("../src/components/JournalIcon", () => ({ JournalIcon: "JournalIcon" }));
 // services 连着原生分享模块：只留写信页用到的几样；落盘走真的 letters.writeLetter。

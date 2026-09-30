@@ -1,3 +1,4 @@
+import { attachmentAvailable, ensureAttachment } from "./attachments";
 import { useEffect, useState } from "react";
 import { AppState, Platform, ScrollView, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
@@ -190,6 +191,21 @@ export function MediaScreen({ route, navigation }: Props<"Media">) {
       });
   };
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const [, refresh] = useState(0);
+  useEffect(() => {
+    if (!media || attachmentAvailable(media)) return;
+    const controller = new AbortController();
+    void Promise.resolve().then(async () => {
+      if (controller.signal.aborted) return;
+      setLoading(true); setError("");
+      try { await ensureAttachment(media, controller.signal); if (!controller.signal.aborted) refresh((n) => n + 1); }
+      catch (e) { if (!controller.signal.aborted) setError(messageOf(e)); }
+      finally { if (!controller.signal.aborted) setLoading(false); }
+    });
+    return () => controller.abort();
+  }, [media, attempt]);
   const title = !media
     ? "查看照片"
     : media.kind === "image"
@@ -202,7 +218,9 @@ export function MediaScreen({ route, navigation }: Props<"Media">) {
   if (!media || !mediaFile(media).exists)
     return (
       <Page title={title}>
-        <Text>这份文件已经不在手机里了，记录本身仍保留。</Text>
+        <Text>{loading ? "正在下载原件…" : "原件尚未下载，联网后可查看。"}</Text>
+        <ErrorText message={error} />
+        {media && <Button title="重新下载" disabled={loading} onPress={() => setAttempt((n) => n + 1)} />}
       </Page>
     );
   return (

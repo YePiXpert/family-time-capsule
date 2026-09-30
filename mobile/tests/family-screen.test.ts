@@ -5,6 +5,7 @@ import { FamilyError } from "../src/family/api";
 import { FamilyScreen, deviceLine, isLastAdminDevice } from "../src/family/FamilyScreen";
 import { RecoveryWords, checkPositions, firstWrong } from "../src/family/Words";
 import { qrModules } from "../src/family/Qr";
+vi.mock("../src/local/attachments", () => ({ ensureAllAttachments: vi.fn(async () => {}) }));
 
 const env = vi.hoisted(() => ({
   slots: [] as unknown[],
@@ -41,7 +42,7 @@ vi.mock("expo-crypto", async () => {
 vi.mock("expo-secure-store", () => ({}));
 vi.mock("expo-camera", () => ({}));
 vi.mock("react-native-svg", () => ({ default: "Svg", Path: "Path", Rect: "Rect" }));
-vi.mock("../src/local/context", () => ({ useStore: () => ({}), useLibrary: () => ({ records: env.records }) }));
+vi.mock("../src/local/context", () => ({ useStore: () => ({ get: () => ({ records: env.records }) }), useLibrary: () => ({ records: env.records }) }));
 vi.mock("../src/local/ui", () => ({
   Button: "Button", Card: "Card", DangerCard: "DangerCard", ErrorText: "ErrorText", Field: "Field", FieldRow: "FieldRow",
   Page: "Page", SettingsGroup: "SettingsGroup", SettingsRow: "SettingsRow", Text: "Text",
@@ -168,7 +169,7 @@ it("已获准与第一次同步分开：先说是谁，按了才同步，本机�
   env.share.mockResolvedValueOnce({ lastSyncSummary: { devices: 2 } });
   find(tree, "family-first-sync")!.props!.onPress!();
   await vi.waitFor(() => expect(env.slots[SYNCED]).toBe(true));
-  expect(env.share).toHaveBeenCalledWith({}, joined.key, { transport: {}, onProgress: expect.any(Function), signal: expect.any(AbortSignal) });
+  expect(env.share).toHaveBeenCalledWith(expect.objectContaining({ get: expect.any(Function) }), joined.key, { transport: {}, eagerMedia: false, onProgress: expect.any(Function), signal: expect.any(AbortSignal) });
   expect(env.slots[MESSAGE]).toContain("第一次同步完成，2 台手机在一起写。");
   expect(env.mark.mock.calls).toEqual([[true], [false]]);
   tree = render();

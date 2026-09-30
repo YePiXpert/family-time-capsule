@@ -1436,3 +1436,35 @@ it("恢复一份旧备份：备份里的旧名字、旧人物不传给家人，�
     expect({ name: p.store.get().profile.name, motto: p.store.get().profile.motto, person: p.store.get().persons.p!.name })
       .toEqual({ name: "清洛", motto: undefined, person: "外婆" });
 }, 60000);
+
+it("按需同步只取清单，打开原件才下载；完整备份先补齐全部原件", async () => {
+  const { receiver: p, remote, deps } = await seeded();
+  await p.family.joinFamily(p.store, key, { ...deps, eagerMedia: false });
+  const media = Object.values(p.store.get().media);
+  expect(media.length).toBeGreaterThan(0);
+  expect(media.every((m) => m.remote && !p.files.mediaFile(m).exists)).toBe(true);
+  const transport = await import("../src/sync/transport");
+  vi.spyOn(transport, "createTransport").mockReturnValue(deps.transport);
+  const { fetchAttachment } = await import("../src/sync/attachments");
+  const { installAttachmentLoader, ensureAttachment } = await import("../src/local/attachments");
+  const release = installAttachmentLoader(fetchAttachment);
+  try {
+    await ensureAttachment(media[0]!);
+    expect(sha256Hex(fs.readFileSync(p.files.mediaFile(media[0]!).uri))).toBe(media[0]!.sha256);
+    expect(media.slice(1).every((m) => !p.files.mediaFile(m).exists)).toBe(true);
+    const complete = await p.backup.createBackup(p.store.get());
+    expect(complete.exists).toBe(true);
+    for (const m of media) expect(sha256Hex(fs.readFileSync(p.files.mediaFile(m).uri))).toBe(m.sha256);
+    expect(remote.manifests.has("妈妈手机")).toBe(true);
+  } finally { release(); }
+});
+it("未封存的信与草稿独有附件不进入家庭清单", async () => {
+  const p = await phone();
+  await p.store.change((s) => {
+    s.media.private = { id: "private", file: "private.jpg", name: "草稿照片", kind: "image", bytes: 1, sha256: "a".repeat(64) };
+    s.letters.draft = { id: "draft", title: "私有草稿", text: "还没写完", from: "妈妈", sealed: false, openAt: "2040-01-01", writtenAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z", mediaIds: ["private"], coverId: "private" };
+  });
+  const shared = p.engine.sharedLibrary(p.store.get());
+  expect(shared.letters).toEqual({}); expect(shared.media).toEqual({});
+  expect(p.store.get().letters.draft?.text).toBe("还没写完");
+});

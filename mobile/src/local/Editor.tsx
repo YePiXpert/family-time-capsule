@@ -1,3 +1,4 @@
+import { attachmentAvailable } from "./attachments";
 import { AIEditor } from "../ai/Editor";
 import { proposalPatch } from "../ai/state";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -463,7 +464,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
   return (
     <Page
       scroll={false}
-      title={draft.recordId ? "编辑这一刻" : "记下这一刻"}
+      title={draft.recordId ? "编辑记录" : "记一条"}
       // 放弃收进顶栏右侧一枚垃圾桶：页尾不再多一张卡，整页一屏放下、不上下滑。
       right={
         <IconButton
@@ -958,7 +959,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
           <View style={{ flexDirection: "row", alignItems: "center" }}>
             <ToolButton
               icon="image"
-              label="照片"
+              label="照片/视频"
               disabled={busy || recording}
               onPress={() => {
                 void run(() => pick(false));
@@ -1014,7 +1015,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
             />
           </View>
           <Button
-            title={busy ? "正在保存…" : "保存这一刻"}
+            title={busy ? "正在保存…" : "保存"}
             primary
             testID="capture-save"
             disabled={busy}
@@ -1028,7 +1029,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                   if (verified.current.has(id)) continue;
                   const media = store.get().media[id];
                   if (!media) throw new Error("附件还没写完，请重试。");
-                  await verifyMedia(media);
+                  if (!media.remote || attachmentAvailable(media)) await verifyMedia(media);
                   verified.current.add(id);
                 }
                 const record = await store.change((s) =>

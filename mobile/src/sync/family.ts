@@ -268,7 +268,7 @@ async function syncFamily(
       try {
         if (!blob || blob.bytes !== m.bytes)
           throw new SyncError("CORRUPT", `远端这张照片对不上：${m.name}`);
-        await downloadBlob(blob, deps, m.name);
+        if (deps.eagerMedia !== false) await downloadBlob(blob, deps, m.name);
       } catch (e) {
         if (!unreadable(e)) throw e;
         broken = m;
@@ -307,7 +307,9 @@ async function syncFamily(
   try {
     for (const m of merged.wantedMedia) {
       throwIfAborted(deps.signal);
-      prepared.set(m.id, await materialize(m, reserved, created, deps));
+      prepared.set(m.id, deps.eagerMedia !== false ? await materialize(m, reserved, created, deps) : {
+        ...m, remote: true, thumb: undefined, file: `${randomUUID()}.${m.file.split(".").pop()}`,
+      });
     }
     deps.onProgress?.("正在写入本机资料…");
     const earlier = await readConflicts();

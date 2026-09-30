@@ -280,7 +280,7 @@ it("#15 安卓按取消关掉日期框不算手选：之后加的照片仍按拍
   await tick();
   expect(env.lib.drafts.d!.autoDate).toBe(true);
   expect(env.lib.drafts.d!.content.date).toBe("2026-09-25T07:00:00.000Z");
-  tool("照片").onPress!();
+  tool("照片/视频").onPress!();
   await vi.waitFor(() => expect(byId("editor-media-0")).toBeDefined());
   await saveAndLeave();
   expect(env.lib.records["new-id"]!.date).toBe("2026-09-18T09:30:00");
@@ -296,7 +296,7 @@ it("#15 安卓选好日期（set）才算手选：日期改掉，之后加的照
   await tick();
   expect(env.lib.drafts.d!.autoDate).toBe(false);
   expect(env.lib.drafts.d!.content.date).toBe("2026-09-01T02:00:00.000Z");
-  tool("照片").onPress!();
+  tool("照片/视频").onPress!();
   await vi.waitFor(() => expect(byId("editor-media-0")).toBeDefined());
   await saveAndLeave();
   expect(env.lib.records["new-id"]!.date).toBe("2026-09-01T02:00:00.000Z");

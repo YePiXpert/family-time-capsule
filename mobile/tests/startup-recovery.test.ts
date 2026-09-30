@@ -1,5 +1,11 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { isValidElement, type ReactNode } from "react";
+vi.mock("../src/local/Timeline", () => ({ Timeline: "Timeline", Memories: "Memories", LetterInbox: "LetterInbox" }));
+vi.mock("../src/local/HistoryScreen", () => ({ HistoryScreen: "HistoryScreen", LetterRevision: "LetterRevision" }));
+vi.mock("../src/local/StoryScreen", () => ({ StoryScreen: "StoryScreen" }));
+vi.mock("../src/local/notifications", () => ({ useImportantDayNotifications: vi.fn() }));
+vi.mock("../src/ai/stories", () => ({ useAnnualStories: vi.fn() }));
+vi.mock("../src/sync/attachments", () => ({ useAttachmentDownloads: vi.fn() }));
 
 // 启动打不开本机资料时的「从完整备份恢复」：选择器复制进缓存的备份，
 // 检查失败、取消、恢复成功或失败之后都要删掉（#11 的启动页那一半）。

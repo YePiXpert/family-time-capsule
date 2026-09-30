@@ -69,6 +69,8 @@ export type RemoteIndex = {
   blobBytes: number;
 };
 export type EngineDeps = {
+  /** Explicit full-download verification; normal sync keeps originals on demand. */
+  eagerMedia?: boolean;
   transport: Transport;
   key: Uint8Array;
   onProgress?: RestoreProgress;
@@ -161,6 +163,7 @@ const PUBLISHED_ROOT = {
   version: true,
   profile: true,
   yearNotes: true,
+  yearStories: true,
   yearCovers: true,
   yearPicks: true,
   yearBooksBoundAt: true,
@@ -200,7 +203,7 @@ export function sharedLibrary(state: Library): Library {
     selections: {},
     series: state.series,
     persons: state.persons,
-    letters: state.letters,
+    letters: Object.fromEntries(Object.entries(state.letters).filter(([, letter]) => letter.sealed)),
   } as Library;
   const used = new Set([
     ...referencedMedia(rest),

@@ -6,6 +6,11 @@ import type {
 } from "@react-navigation/native-stack";
 export type Routes = {
   Shelf: undefined;
+  Memories: undefined;
+  Letters: undefined;
+  Story: { year: string };
+  History: { id: string; kind: "records" | "letters" };
+  LetterRevision: { id: string };
   Search: undefined;
   Month: { month: string };
   Year: { year: string };

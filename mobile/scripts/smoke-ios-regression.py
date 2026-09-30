@@ -75,9 +75,9 @@ def regression(udid, bundle, app, runner_build, out, report):
     assert all(backup.suffix == '.xmbm' for backup in backups), f'Retention copies should be manifests: {[b.name for b in backups]}'
     check_blob_store(container/'Documents'/'anan-v1', backups)
     manifests=[read_backup(backup) for backup in backups]
-    before=next(m for m in manifests if m['albums']); records=before['records']; own=[r for r in records.values() if r['text']=='A little story. More memories.']; assert len(own)==1 and own[0]['revision']==2
+    before=next(m for m in manifests if any(r['text']=='A little story. More memories.' for r in m['records'].values())); records=before['records']; own=[r for r in records.values() if r['text']=='A little story. More memories.']; assert len(own)==1 and own[0]['revision']==2
     assert any(before['media'][i]['kind']=='audio' for i in own[0]['mediaIds']), 'Recorded audio was not preserved'
-    album=next(iter(before['albums'].values())); assert album['name']=='Our days' and len(album['items'])==3
+    assert len(own[0].get('history', [])) >= 2, 'Full revision history was not preserved'
     assert not before['drafts']
     # Force startup failure after validating the ordinary restore. Recovery must
     # activate an independent database and leave the unreadable original intact.
@@ -104,7 +104,7 @@ def regression(udid, bundle, app, runner_build, out, report):
     for media in restored['media'].values():
         original = container/'Documents'/'anan-v1'/'media'/media['file']
         assert hashlib.sha256(original.read_bytes()).hexdigest() == media['sha256']
-    report.update(success=True, recordIdentityPreserved=True, albumSurvivedRelaunch=True, crossMonthSelection=True, fullBackupRestored=True, unreadableLibraryRecovered=True, originalDatabasePreserved=True, backupFiles=len(backups))
+    report.update(success=True, recordIdentityPreserved=True, revisionHistoryPreserved=True, monthNavigation=True, fullBackupRestored=True, unreadableLibraryRecovered=True, originalDatabasePreserved=True, backupFiles=len(backups))
 
 
 def main():

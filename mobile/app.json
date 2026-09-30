@@ -1,13 +1,13 @@
 {
   "expo": {
-    "name": "\u6849\u6849\u6210\u957f\u8bb0",
+    "name": "桉桉成长记",
     "slug": "family-time-capsule",
     "platforms": [
       "ios",
       "android"
     ],
     "scheme": "familytimecapsule",
-    "version": "1.1.7",
+    "version": "1.2.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -16,8 +16,8 @@
       "buildNumber": "89",
       "supportsTablet": true,
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "\u9009\u62e9\u8981\u4fdd\u5b58\u5230\u6849\u6849\u6210\u957f\u8bb0\u7684\u7167\u7247\u6216\u89c6\u9891\u3002",
-        "NSSpeechRecognitionUsageDescription": "\u628a\u4f60\u8bf4\u7684\u8bdd\u8f6c\u6210\u6587\u5b57\uff0c\u53ea\u5728\u8fd9\u53f0\u624b\u673a\u4e0a\u5b8c\u6210\u3002"
+        "NSPhotoLibraryUsageDescription": "选择要保存到桉桉成长记的照片或视频。",
+        "NSSpeechRecognitionUsageDescription": "把你说的话转成文字，只在这台手机上完成。"
       }
     },
     "android": {
@@ -47,15 +47,15 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "\u9009\u62e9\u8981\u4fdd\u5b58\u5230\u6849\u6849\u6210\u957f\u8bb0\u7684\u7167\u7247\u6216\u89c6\u9891\u3002",
-          "cameraPermission": "\u62cd\u6444\u8981\u4fdd\u5b58\u5230\u6849\u6849\u6210\u957f\u8bb0\u7684\u7167\u7247\u6216\u89c6\u9891\uff0c\u6216\u626b\u5bb6\u4eba\u624b\u673a\u4e0a\u7684\u52a0\u5165\u4e8c\u7ef4\u7801\u3002",
-          "microphonePermission": "\u5f55\u5236\u8981\u4fdd\u5b58\u5230\u6849\u6849\u6210\u957f\u8bb0\u7684\u89c6\u9891\u58f0\u97f3\u3002"
+          "photosPermission": "选择要保存到桉桉成长记的照片或视频。",
+          "cameraPermission": "拍摄要保存到桉桉成长记的照片或视频，或扫家人手机上的加入二维码。",
+          "microphonePermission": "录制要保存到桉桉成长记的视频声音。"
         }
       ],
       [
         "expo-audio",
         {
-          "microphonePermission": "\u5f55\u5236\u8981\u4fdd\u5b58\u5230\u6849\u6849\u6210\u957f\u8bb0\u7684\u5bb6\u5ead\u58f0\u97f3\u3002",
+          "microphonePermission": "录制要保存到桉桉成长记的家庭声音。",
           "recordAudioAndroid": true,
           "enableBackgroundRecording": false,
           "enableBackgroundPlayback": false
@@ -66,16 +66,17 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "\u628a\u62cd\u6444\u5750\u6807\u6362\u6210\u5730\u540d\u65f6\u4f7f\u7528\u5b9a\u4f4d\u3002"
+          "locationWhenInUsePermission": "把拍摄坐标换成地名时使用定位。"
         }
       ],
       [
         "expo-camera",
         {
-          "cameraPermission": "\u62cd\u6444\u8981\u4fdd\u5b58\u5230\u6849\u6849\u6210\u957f\u8bb0\u7684\u7167\u7247\u6216\u89c6\u9891\uff0c\u6216\u626b\u5bb6\u4eba\u624b\u673a\u4e0a\u7684\u52a0\u5165\u4e8c\u7ef4\u7801\u3002",
+          "cameraPermission": "拍摄要保存到桉桉成长记的照片或视频，或扫家人手机上的加入二维码。",
           "recordAudioAndroid": false
         }
-      ]
+      ],
+      "expo-notifications"
     ]
   }
 }

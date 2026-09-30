@@ -621,7 +621,7 @@ export function ReadableCopy() {
     store = useStore(),
     s = useStyles();
   const [year, setYear] = useState(""),
-    [sealed, setSealed] = useState(false),
+    [sealed, setSealed] = useState(true),
     [progress, setProgress] = useState<ArchiveProgress | null>(null),
     [message, setMessage] = useState(""),
     [error, setError] = useState("");

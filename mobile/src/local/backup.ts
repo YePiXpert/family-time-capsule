@@ -1,3 +1,5 @@
+import type { HistoryEntry } from "./history";
+import { ensureAllAttachments, ensureAttachment } from "./attachments";
 import { Directory, File, FileMode, Paths } from "expo-file-system";
 import { randomUUID } from "expo-crypto";
 import { sha256 } from "@noble/hashes/sha2.js";
@@ -301,7 +303,7 @@ export async function createSyncManifest(
 ): Promise<File> {
   syncDirectory.create({ intermediates: true, idempotent: true });
   const out = syncManifestFile();
-  await writeManifestTo(state, out, syncDirectory, true, onProgress, signal);
+  await writeManifestTo(state, out, syncDirectory, true, onProgress, signal, false, true);
   try {
     collectBlobs();
   } catch {
@@ -321,9 +323,11 @@ async function writeManifestTo(
   onProgress?: RestoreProgress,
   signal?: AbortSignal,
   lenient = false,
+  allowRemote = false,
 ): Promise<number> {
   if (signal?.aborted) throw new BackupStopped();
   ensureDirectories();
+  if (!allowRemote && !lenient) await ensureAllAttachments(state, onProgress, signal);
   state = withoutPendingRecordings(state);
   const encode = (lib: Library) => {
     const entities = encodeEntities(lib);
@@ -340,7 +344,7 @@ async function writeManifestTo(
   assertBlobSpace(
     blobs.reduce((n, blob) => {
       const stored = blobFile(blob.sha256);
-      return stored.exists && stored.size === blob.bytes ? n : n + blob.bytes;
+      return (stored.exists && stored.size === blob.bytes) || (allowRemote && owners.get(blob.sha256)?.remote) ? n : n + blob.bytes;
     }, 0),
   );
   let done = 0;
@@ -348,7 +352,8 @@ async function writeManifestTo(
   for (const blob of blobs) {
     if (signal?.aborted) throw new BackupStopped();
     try {
-      await ensureBlob(owners.get(blob.sha256)!, blob);
+      const owner = owners.get(blob.sha256)!;
+      if (!(allowRemote && owner.remote && !mediaFile(owner).exists && !blobFile(blob.sha256).exists)) await ensureBlob(owner, blob);
     } catch (e) {
       if (!lenient || !(e instanceof MediaMissing)) throw e;
       missing.add(blob.sha256);
@@ -374,7 +379,7 @@ async function writeManifestTo(
     } finally {
       handle.close();
     }
-    await verifyManifest(part);
+    await verifyManifest(part, allowRemote);
     if (signal?.aborted) throw new BackupStopped();
     await part.move(out, { overwrite });
   } catch (e) {
@@ -413,12 +418,12 @@ function withoutMedia(state: Library, gone: ReadonlySet<string>): Library {
     media: Object.fromEntries(
       Object.entries(state.media).filter(([id]) => !ids.has(id)),
     ),
-    records: each(state.records, content),
+    records: each(state.records, (v) => ({ ...content(v), ...(v.history ? { history: v.history.map((h) => ({ ...h, ...(h.record ? { record: content(h.record) } : {}) })) as HistoryEntry[] } : {}) })),
     drafts: each(state.drafts, (d) => {
       const c = content(d.content);
       return c === d.content ? d : { ...d, content: c };
     }),
-    letters: each(state.letters, content),
+    letters: each(state.letters, (v) => ({ ...content(v), ...(v.history ? { history: v.history.map((h) => ({ ...h, ...(h.letter ? { letter: content(h.letter) } : {}) })) as HistoryEntry[] } : {}) })),
     albums: each(state.albums, cover),
     selections: each(state.selections, cover),
     series: each(state.series, (v) =>
@@ -515,12 +520,13 @@ export function readManifest(file: File): {
   }
 }
 /** 清单备份写完后读回核对：外壳完整、库能通过校验、每个 blob 都在库里且长度对。 */
-async function verifyManifest(file: File): Promise<void> {
+async function verifyManifest(file: File, allowRemote = false): Promise<void> {
   const { meta, entities } = readManifest(file);
   const state = decodeLibraryV2(meta, entities);
   if (entityCount(state) !== meta.entityCount)
     throw new Error("备份内容不完整。");
   for (const blob of meta.blobs) {
+    if (allowRemote) continue;
     const stored = blobFile(blob.sha256);
     if (!stored.exists || stored.size !== blob.bytes)
       throw new Error("备份里的照片没有完整落盘，请重试。");
@@ -960,6 +966,7 @@ export async function restoreBackup(
   onProgress?.("正在备份当前内容…");
   // 这一份不收拾旧份：正要恢复的那份可能就是最旧的保留备份，恢复完再按常规收拾。
   let snapshot = store.get();
+  for (const media of Object.values(snapshot.media)) if (media.remote) await ensureAttachment(media, signal);
   let { out: prior, skipped } = await writeManifest(
     snapshot,
     true,
@@ -1008,6 +1015,7 @@ export async function restoreBackup(
           );
         onProgress?.("恢复途中又有新内容，正在重新备份当前内容…");
         snapshot = store.get();
+        for (const media of Object.values(snapshot.media)) if (media.remote) await ensureAttachment(media, signal);
         ({ out: prior, skipped } = await writeManifest(
           snapshot,
           true,

@@ -16,11 +16,11 @@ export const DEFAULT_OPEN_AGE = 18;
 
 /** 草稿还没封；封了没到日子是 sealed；到了日子还没拆是 openable；拆过就是 opened。 */
 export function letterState(
-  letter: Pick<Stored<LocalLetter>, "sealed" | "openAt" | "openedAt">,
+  letter: Pick<Stored<LocalLetter>, "sealed" | "openAt" | "openedAt" | "visibility">,
   today = new Date(),
 ): LetterState {
   if (!letter.sealed) return "draft";
-  if (letter.openedAt) return "opened";
+  if (letter.openedAt || letter.visibility === "family") return "opened";
   return letter.openAt <= toDayKey(today) ? "openable" : "sealed";
 }
 
@@ -68,7 +68,7 @@ export function letterCaption(
  * 读屏仍念完整的 `letterCaption`。
  */
 export function letterShortCaption(
-  letter: Pick<Stored<LocalLetter>, "sealed" | "openAt" | "openedAt">,
+  letter: Pick<Stored<LocalLetter>, "sealed" | "openAt" | "openedAt" | "visibility">,
   today = new Date(),
 ): string {
   switch (letterState(letter, today)) {
@@ -111,9 +111,9 @@ export function sealLetterAt(
   at: string,
 ): Stored<LocalLetter> {
   if (letter.sealed) throw new Error("这封信已经封存了。");
-  if (!letter.text.trim()) throw new Error("信还是空的，先写点什么。");
+  if (!letter.text.trim() && !letter.mediaIds.length) throw new Error("信还是空的，先写点什么。");
   // 日期选择只挡得住新选的日子：草稿放久了，原先选的拆封日可能已经过了。
-  if (letter.openAt <= toDayKey(new Date(at)))
+  if (letter.visibility !== "family" && letter.openAt <= toDayKey(new Date(at)))
     throw new Error(PAST_OPEN_AT);
   return {
     ...letter,

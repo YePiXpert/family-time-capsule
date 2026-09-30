@@ -182,7 +182,8 @@ export async function twoPhonesWriteTogether({
 
   b = await openPhone(rootB);
   await b.family.runFamilySync(b.store, depsB);
-  expect(b.store.get().records["r-a"]).toEqual(concurrentB);
+  expect(b.store.get().records["r-a"]).toMatchObject({ ...concurrentB, history: expect.arrayContaining([...(concurrentB.history ?? [])]) });
+  expect(b.store.get().records["r-a"]!.history!.some((h) => h.record?.text === "爸爸再改一版")).toBe(true);
   const conflictsB = await b.state.readConflicts();
   // 同键的新留底替换前一场景的 02:00 版，不叠加卡片。
   expect(conflictsB).toHaveLength(1);
@@ -197,6 +198,7 @@ export async function twoPhonesWriteTogether({
   // 记录内容收敛；revision 是各手机自己的草稿防撞计数。
   expect(a.store.get().records["r-a"]).toEqual({
     ...concurrentB,
+    history: b.store.get().records["r-a"]!.history,
     revision: concurrentA.revision + 1,
   });
   const conflictsA = await a.state.readConflicts();

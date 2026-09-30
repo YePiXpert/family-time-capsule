@@ -108,7 +108,7 @@ export function createAutoSync(deps: AutoSyncDeps) {
 
 const sharedFields = [
   "records", "letters", "albums", "series", "persons", "profile",
-  "yearNotes", "yearCovers", "yearPicks", "yearBooksBoundAt", "tombstones", "rootStamps",
+  "yearNotes", "yearStories", "yearCovers", "yearPicks", "yearBooksBoundAt", "tombstones", "rootStamps",
 ] as const;
 export function sharedChanged(prev: Library, next: Library): boolean {
   return sharedFields.some((field) => prev[field] !== next[field]);
@@ -136,6 +136,7 @@ export function useAutoSync(store: LocalStore): void {
           if (!key || signal.aborted) return;
           await runFamilySync(store, {
             transport: createTransport(),
+            eagerMedia: false,
             key,
             signal,
             onSnapshot: () => auto.snapshotTaken(),

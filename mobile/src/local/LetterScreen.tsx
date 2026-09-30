@@ -16,6 +16,7 @@ import type { Props } from "./navigation";
 import { deleteLetter, openLetter } from "./services";
 import {
   Button,
+  Photo,
   ErrorText,
   MOTION,
   Page,
@@ -96,9 +97,9 @@ export function LetterScreen({ route, navigation }: Props<"Letter">) {
       </Page>
     );
   if (status === "draft") return <Page>{null}</Page>;
-  const recordings = letter.mediaIds
+  const attachments = letter.mediaIds
     .map((mediaId) => state.media[mediaId])
-    .filter((m): m is LocalMedia => m?.kind === "audio");
+    .filter((m): m is LocalMedia => !!m);
   const title = letter.title || "一封信";
   const open = (confirm: boolean) => {
     const go = () => {
@@ -140,7 +141,7 @@ export function LetterScreen({ route, navigation }: Props<"Letter">) {
           <Text style={s.title}>{title}</Text>
           <Text style={s.muted}>
             写于 {dateLabel(letter.writtenAt)}
-            {letter.openedAt ? ` · 拆于 ${dateLabel(letter.openedAt)}` : ""}
+            {letter.openedAt ? ` · ${letter.openedBy || "家人"}拆于 ${dateLabel(letter.openedAt)}` : " · 家人现在可读"}
           </Text>
           <Text
             selectable
@@ -153,6 +154,7 @@ export function LetterScreen({ route, navigation }: Props<"Letter">) {
           >
             {letter.text}
           </Text>
+          {attachments.filter((m) => m.kind === "image").map((m) => <Pressable key={m.id} onPress={() => navigation.navigate("Media", { id: m.id })}><Photo media={m} preview contain /></Pressable>)}
           {!!letter.from && (
             <Text
               style={{
@@ -164,11 +166,11 @@ export function LetterScreen({ route, navigation }: Props<"Letter">) {
               —— {letter.from}
             </Text>
           )}
-          {recordings.map((media, i) => (
+          {attachments.map((media, i) => (
             <Button
               key={media.id}
-              title={recordings.length > 1 ? `听录音 ${i + 1}` : "听录音"}
-              icon="audio"
+              title={media.kind === "audio" ? `听录音 ${i + 1}` : media.kind === "video" ? `看视频 ${i + 1}` : `看附件 ${i + 1}`}
+              icon={media.kind === "audio" ? "audio" : media.kind === "video" ? "video" : "image"}
               onPress={() => navigation.navigate("Media", { id: media.id })}
             />
           ))}
@@ -245,6 +247,10 @@ export function LetterScreen({ route, navigation }: Props<"Letter">) {
           )}
         </Animated.View>
       )}
+      {status === "opened" && <View style={s.row}>
+        <Button title="编辑信" onPress={() => navigation.navigate("LetterRevision", { id: letter.id })} />
+        <Button title="修改历史" kind="text" onPress={() => navigation.navigate("History", { id: letter.id, kind: "letters" })} />
+      </View>}
       <ErrorText message={error} />
       <Pressable
         accessibilityRole="button"

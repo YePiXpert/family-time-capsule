@@ -1,4 +1,7 @@
+import { validStories, type YearStory } from "./stories";
 import { CHILD_FALLBACK } from "./brand";
+import type { HistoryEntry } from "./history";
+import { historyMedia } from "./history";
 import { lineage } from "./hash";
 import type { AIJob, AIProposal } from "../ai/types";
 import { validateStoredAI } from "../ai/state";
@@ -17,6 +20,10 @@ export type PhotoMetadata = {
 };
 export type MediaKind = "image" | "video" | "audio" | "document";
 export type LocalMedia = {
+  /** Original is recoverable from the approved family; availability is determined on this device. */
+  remote?: boolean;
+  /** Bounded, encrypted-with-manifest JPEG preview; never sent to AI. */
+  preview?: string;
   id: string;
   file: string;
   name: string;
@@ -53,6 +60,8 @@ export const BY_LIMIT = 20;
 /** 落款的候选称呼：用过的排前面，这些兜底。 */
 export const BY_PRESETS = ["爸爸", "妈妈", "外婆", "外公", "奶奶", "爷爷"] as const;
 export type LocalRecord = RecordContent & {
+  modifiedBy?: string;
+  history?: readonly HistoryEntry[];
   id: string;
   revision: number;
   updatedAt: string;
@@ -108,8 +117,12 @@ export type LocalPerson = {
   /** 最近一次改名的时刻（LocalStore.change 盖上）；1.1.6 及更早建的人物没有。 */
   updatedAt?: string;
 };
-/** 时间胶囊信：现在写，封存到 openAt 那天才拆。封存后不再可改。 */
+/** 本机草稿，封存后共享；按约定拆开，修改保留完整历史。 */
 export type LocalLetter = {
+  modifiedBy?: string;
+  history?: readonly HistoryEntry[];
+  visibility?: "family" | "birthday";
+  openedBy?: string;
   id: string;
   title: string;
   text: string;
@@ -178,6 +191,8 @@ export type Library = {
     largeText: boolean;
     /** 每天的小问题，仅留在这台手机。 */
     dailyQuestion?: DailyQuestionCache;
+    storyAttempts?: Record<string, string>;
+    birthdayNotifications?: boolean;
     lockEnabled?: boolean;
     /** 旧版本留下的转写同意；现在不再询问，只为读得进旧库而保留。 */
     transcribeConsent?: boolean;
@@ -197,6 +212,7 @@ export type Library = {
   letters: Record<string, Stored<LocalLetter>>;
   /** 「爸爸妈妈的话」annual notes, keyed by four-digit year like "2026". */
   yearNotes: Record<string, string>;
+  yearStories?: Record<string, YearStory>;
   /** 年度纪念册手选的封面素材，按四位年份存；没选就按当年最新一张照片自动定。 */
   yearCovers: Record<string, string>;
   yearPicks?: Record<string, YearPicks>;
@@ -223,20 +239,21 @@ export type Library = {
 export const PROFILE_FIELDS = ["name", "fullName", "motto", "birthday", "avatarId"] as const;
 export type ProfileField = (typeof PROFILE_FIELDS)[number];
 /** 带版本的根值 id：资料字段、某年的寄语、某年的封面。 */
-export const ROOT_STAMP_KEY = /^(profile:(name|fullName|motto|birthday|avatarId)|(yearNotes|yearCovers):\d{4})$/;
+export const ROOT_STAMP_KEY = /^(profile:(name|fullName|motto|birthday|avatarId)|(yearNotes|yearCovers|yearStories):\d{4})$/;
 /** 库里现有的带版本根值 id（不含只剩时刻、值已清掉的那些）。 */
 export function versionedRootIds(lib: Library): string[] {
   return [
     ...PROFILE_FIELDS.map((f) => `profile:${f}`),
     ...Object.keys(lib.yearNotes).map((y) => `yearNotes:${y}`),
     ...Object.keys(lib.yearCovers).map((y) => `yearCovers:${y}`),
+    ...Object.keys(lib.yearStories ?? {}).map((y) => `yearStories:${y}`),
   ];
 }
 /** 一个共享根值（资料字段、某年寄语／封面／选片）；没有就是 undefined。 */
 export function rootValue(lib: Library, id: string): unknown {
   if (id.startsWith("profile:"))
     return lib.profile[id.slice(8) as ProfileField];
-  const [field, year] = id.split(":") as ["yearNotes" | "yearCovers" | "yearPicks", string];
+  const [field, year] = id.split(":") as ["yearNotes" | "yearCovers" | "yearPicks" | "yearStories", string];
   return lib[field]?.[year];
 }
 /** 新的时刻：现在，但至少比上一版晚一毫秒——上一版可能来自时钟快的手机，改动得排在它后面。 */
@@ -249,7 +266,7 @@ export function nextStamp(previous: string | undefined, now: string): string {
  * 值没变的不动；这次改动自己写了时刻的（合并、恢复）也不动。
  */
 export function stampChanges(prev: Library, next: Library, delta: LibraryDelta, now: string): void {
-  if (prev.profile !== next.profile || prev.yearNotes !== next.yearNotes || prev.yearCovers !== next.yearCovers) {
+  if (prev.profile !== next.profile || prev.yearNotes !== next.yearNotes || prev.yearCovers !== next.yearCovers || prev.yearStories !== next.yearStories) {
     const before = prev.rootStamps ?? {},
       after = next.rootStamps ?? {};
     let stamps: Record<string, string> | undefined;
@@ -413,6 +430,7 @@ export function forkLibrary(s: Library): Library {
     settings: { ...s.settings },
     yearNotes: { ...s.yearNotes },
     yearCovers: { ...s.yearCovers },
+    ...(s.yearStories ? { yearStories: { ...s.yearStories } } : {}),
     ...(s.yearPicks ? { yearPicks: { ...s.yearPicks } } : {}),
     ...(s.tombstones ? { tombstones: { ...s.tombstones } } : {}),
     ...(s.rootStamps ? { rootStamps: { ...s.rootStamps } } : {}),
@@ -634,10 +652,10 @@ export function stampUnsigned(s: Library, by: string): number {
 export function referencedMedia(s: Library): Set<string> {
   return new Set([
     ...(s.profile.avatarId ? [s.profile.avatarId] : []),
-    ...Object.values(s.records).flatMap((r) => r.mediaIds),
+    ...Object.values(s.records).flatMap((r) => [...r.mediaIds, ...historyMedia(r)]),
     ...Object.values(s.drafts).flatMap((d) => d.content.mediaIds),
     // 信里的录音与照片也是资料，「清理未使用素材」不能动。
-    ...Object.values(s.letters).flatMap((l) => l.mediaIds),
+    ...Object.values(s.letters).flatMap((l) => [...l.mediaIds, ...historyMedia(l)]),
   ]);
 }
 /**
@@ -1012,6 +1030,7 @@ function validRoot(s: Library): boolean {
       ([year, id]) => !/^\d{4}$/.test(year) || !isId(id),
     ) &&
     validYearPicks(s.yearPicks) &&
+    validStories(s.yearStories) &&
     (s.yearBooksBoundAt === undefined ||
       (!!s.yearBooksBoundAt &&
         typeof s.yearBooksBoundAt === "object" &&
@@ -1062,6 +1081,8 @@ function validRoot(s: Library): boolean {
     !!s.settings &&
     ["auto", "light", "dark"].includes(s.settings.theme) &&
     typeof s.settings.largeText === "boolean" &&
+    (s.settings.birthdayNotifications === undefined || typeof s.settings.birthdayNotifications === "boolean") &&
+    (s.settings.storyAttempts === undefined || (typeof s.settings.storyAttempts === "object" && s.settings.storyAttempts !== null && !Array.isArray(s.settings.storyAttempts) && Object.entries(s.settings.storyAttempts).every(([year, day]) => /^\d{4}$/.test(year) && typeof day === "string" && /^\d{4}-\d{2}-\d{2}$/.test(day)))) &&
     (s.settings.transcribeConsent === undefined ||
       typeof s.settings.transcribeConsent === "boolean") &&
     (s.settings.lockEnabled === undefined ||
@@ -1079,6 +1100,18 @@ const validAncestors = (value: unknown): boolean =>
   value === undefined ||
   (Array.isArray(value) && value.length <= 8 &&
     value.every((hash) => typeof hash === "string" && /^[a-f0-9]{16}$/.test(hash)));
+/** Historical snapshots must be finite, nonrecursive, and retain their media. */
+function validHistory(s: Library, value: readonly HistoryEntry[] | undefined, kind: "record" | "letter"): boolean {
+  if (value === undefined) return true;
+  if (!Array.isArray(value)) return false;
+  return value.every((entry) => {
+    if (!entry || !/^[a-f0-9]{64}$/.test(entry.id) || !isTime(entry.at) || !isText(entry.by)) return false;
+    const v = entry[kind];
+    return !!v && !("history" in v) && isText(v.title) && isText(v.text) &&
+      isIds(v.mediaIds) && v.mediaIds.every((id: string) => !!s.media[id]) &&
+      (v.coverId === null || v.mediaIds.includes(v.coverId)) && isTime(v.updatedAt);
+  });
+}
 /** 一个实体自身的形状，以及它指向的东西是否都还在。 */
 function validEntity(s: Library, kind: EntityKind, key: string): boolean {
   if (!isId(key)) return false;
@@ -1087,6 +1120,8 @@ function validEntity(s: Library, kind: EntityKind, key: string): boolean {
     return (
       !!m &&
       key === m.id &&
+      (m.remote === undefined || typeof m.remote === "boolean") &&
+      (m.preview === undefined || (typeof m.preview === "string" && m.preview.length <= 24000 && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(m.preview))) &&
       isFileName(m.file) &&
       isText(m.name) &&
       ["image", "video", "audio", "document"].includes(m.kind) &&
@@ -1121,6 +1156,7 @@ function validEntity(s: Library, kind: EntityKind, key: string): boolean {
       !!r &&
       key === r.id &&
       validContent(s, r) &&
+      validHistory(s, r.history, "record") &&
       validAncestors(r.ancestors) &&
       Number.isInteger(r.revision) &&
       r.revision >= 1 &&
@@ -1205,6 +1241,9 @@ function validEntity(s: Library, kind: EntityKind, key: string): boolean {
     return (
       !!l &&
       key === l.id &&
+      validHistory(s, l.history, "letter") &&
+      (l.visibility === undefined || ["family", "birthday"].includes(l.visibility)) &&
+      (l.openedBy === undefined || isText(l.openedBy)) &&
       validAncestors(l.ancestors) &&
       isText(l.title) &&
       l.title.length <= LETTER_TITLE_LIMIT &&

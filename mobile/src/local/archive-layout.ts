@@ -83,6 +83,7 @@ export type ArchiveLibrary = {
     items: { month: string; recordId: string; path: string }[];
   }[];
   yearNotes: Record<string, string>;
+  yearStories?: Library["yearStories"];
   letters: ArchiveLetter[];
   persons: { id: string; name: string; records: number }[];
 };
@@ -402,15 +403,36 @@ export function planArchive(
     albums,
     series,
     yearNotes,
+    yearStories: Object.fromEntries(Object.entries(state.yearStories ?? {}).filter(([y]) => !year || y === year)),
     letters,
     persons,
   };
+  for (const [storyYear, story] of Object.entries(state.yearStories ?? {})) {
+    if (year && storyYear !== year) continue;
+    const body = [`# ${story.title}`, "AI 根据家人记录整理" + (story.edited ? "，家人已修改。" : "。"), ...story.paragraphs.flatMap((p) => [p.text, ...p.recordIds.filter((id) => byId.has(id)).map((id) => `[原记录](../${byId.get(id)!.folder}/正文.md)`)] )].join("\n\n");
+    text(`年度故事/${storyYear}.md`, body + "\n");
+  }
   text("README.txt", readme(state, year, now));
   if (options.viewerHtml) text("index.html", options.viewerHtml);
   const json = JSON.stringify(library, null, 1);
   text("library.json", `${json}\n`);
   text("library.js", `window.ANAN_LIBRARY = ${json};\n`);
 
+  const historicalMedia: ArchiveMedia[] = [];
+  for (const r of records) for (const [index, h] of (r.history ?? []).entries()) {
+    if (!h.record) continue;
+    const folder = `修改历史/${r.id}/${index + 1}`;
+    const media = placeMedia(state, h.record.mediaIds, folder);
+    historicalMedia.push(...media);
+    text(`${folder}/正文.md`, `# ${h.record.title || "历史记录"}\n\n${h.by} · ${h.at}\n\n${h.record.text}\n\n${mediaLinks(media, folder)}\n`);
+  }
+  for (const l of letters) for (const [index, h] of (state.letters[l.id]?.history ?? []).entries()) {
+    if (!h.letter) continue;
+    const folder = `修改历史/信-${l.id}/${index + 1}`;
+    const media = placeMedia(state, h.letter.mediaIds, folder);
+    historicalMedia.push(...media);
+    text(`${folder}/正文.md`, `# ${h.letter.title || "历史信件"}\n\n${h.by} · ${h.at}\n\n${h.letter.text}\n\n${mediaLinks(media, folder)}\n`);
+  }
   // 素材放在文字之后：小文件先写完，进度剩下的就全是素材。
   let mediaBytes = 0,
     mediaCount = 0;
@@ -419,6 +441,7 @@ export function planArchive(
       ? [{ id: avatar.id, path: child.avatar!, kind: avatar.kind, name: avatar.name, bytes: avatar.bytes }]
       : []),
     ...archived.flatMap((r) => r.media),
+    ...historicalMedia,
     ...letters.flatMap((l) => l.media),
   ];
   for (const m of media) {

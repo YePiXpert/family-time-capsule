@@ -95,7 +95,7 @@ final class NativeRegressionTests: XCTestCase {
         for c in text { field.typeText(String(c)); expected.append(c); let value = expected; wait("Input lost: \(value)") { field.value as? String == value } }
     }
     func testLocalRecordAlbumAndBackup() throws {
-        XCTAssertTrue(element("volume-2026-09").waitUntilExists(timeout: 20)); shot("home")
+        XCTAssertTrue(element("timeline-memories").waitUntilExists(timeout: 20)); shot("home"); tap("timeline-memories")
         tap("volume-2026-09"); XCTAssertTrue(element("record-fixture").waitUntilExists(timeout: 20))
         tap("record-fixture"); tap("record-edit")
         XCTAssertTrue(element("说一段").waitUntilExists(timeout: 20))
@@ -117,7 +117,7 @@ final class NativeRegressionTests: XCTestCase {
         // 文字落盘有 400ms 防抖；留出窗口再终止进程，验证草稿恢复。
         sleep(2)
         relaunchApp()
-        tap("继续编辑"); wait("Draft did not survive relaunch") { self.element("capture-text").value as? String == "A little story." }
+        tap("draft-continue"); wait("Draft did not survive relaunch") { self.element("capture-text").value as? String == "A little story." }
         // 键盘收着、标题地点人物收着：编辑页一屏放下，往上拖也不动（安卓冒烟的 editorFits 同一条）。
         assertFixed("capture-text", draggingFrom: "editor-details"); shot("editor-fixed")
         tap("editor-by"); tap("editor-by-爸爸")
@@ -130,30 +130,18 @@ final class NativeRegressionTests: XCTestCase {
         app.swipeUp(); shot("record-bottom-bar")
         tap("record-edit"); type(" More memories.", "capture-text", initial: "A little story."); tap("capture-save")
         XCTAssertTrue(element("record-edit").waitUntilExists(timeout: 20))
-        tap("keepsake-make")
-        // 生成成功后系统分享面板弹出；截图留证，重启后自然收起。
-        sleep(5); shot("keepsake-share-sheet"); assertNoFailure("Keepsake export")
-        relaunchApp()
-        tap("album-new")
-        let own = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "A little story.")).firstMatch
-        tap(own, "own record in the material picker")
-        tap("record-fixture"); shot("material-selection")
-        tap("2026年8月"); tap("record-earlier"); tap("全部月份"); tap("material-done")
-        type("Our days", "album-name"); tap("返回调整内容"); tap("material-done")
-        XCTAssertEqual(element("album-name").value as? String, "Our days"); tap("album-save")
-        XCTAssertTrue(element("album-reading").waitUntilExists(timeout: 20)); shot("album-reading")
-        relaunchApp()
-        let albumCard = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Our days")).firstMatch
-        tap(albumCard, "album volume")
-        XCTAssertTrue(element("album-reading").waitUntilExists(timeout: 20)); shot("album-after-relaunch")
+        tap("修改历史"); XCTAssertTrue(element("恢复这份内容").waitUntilExists(timeout: 20)); shot("record-history")
+        relaunchApp(); tap("timeline-memories"); tap("volume-2026-08")
+        XCTAssertTrue(element("record-earlier").waitUntilExists(timeout: 20)); shot("month-navigation")
         // 时间胶囊：fixture 里已有一封封存的信；再写一封并封存（刚封好是「封好了」），重启后仍在书架，
         // 打开是「还没到日子」的信封（落印只在封存那一次播），提前拆封能读到正文。
         relaunchApp()
-        tap("letter-new"); type("Letter for later", "letter-title"); type("Words kept for the future.", "letter-text")
+        tap("timeline-letters"); tap("letter-new"); type("Letter for later", "letter-title"); type("Words kept for the future.", "letter-text")
         tap("letter-seal"); tap("封存")
         XCTAssertTrue(element("letter-open-early").waitUntilExists(timeout: 20))
         XCTAssertTrue(labelled("封好了").waitUntilExists(timeout: 20)); shot("letter-sealed")
         relaunchApp()
+        tap("timeline-letters")
         let letterVolume = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Letter for later")).firstMatch
         tap(letterVolume, "letter volume")
         XCTAssertTrue(element("letter-open-early").waitUntilExists(timeout: 20))
@@ -170,7 +158,7 @@ final class NativeRegressionTests: XCTestCase {
         XCTAssertFalse(element("remote-backup").exists); XCTAssertFalse(element("remote-first-sync").exists)
         shot("family-out")
         relaunchApp()
-        tap("volume-year-2026")
+        tap("timeline-memories"); tap("volume-year-2026")
         tap("year-note-edit")
         type("Grow slowly, little one.", "year-note-input")
         tap("year-note-save")
@@ -178,7 +166,7 @@ final class NativeRegressionTests: XCTestCase {
           self.app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Grow slowly, little one.")).firstMatch.exists
         }
         relaunchApp()
-        tap("volume-year-2026")
+        tap("timeline-memories"); tap("volume-year-2026")
         wait("Year note did not survive relaunch") {
           self.app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Grow slowly, little one.")).firstMatch.exists
         }
@@ -216,23 +204,23 @@ final class NativeRegressionTests: XCTestCase {
         shot("archive-share-sheet"); assertNoFailure("Archive export")
         // 截图巡看：之前没有原生截图的阅读页（搜索带键盘、扉页、宝宝资料、本机存储、看原图），只看不改。
         relaunchApp()
-        tap("open-search"); XCTAssertTrue(element("page-back").waitUntilExists(timeout: 20)); sleep(1); shot("search-keyboard")
+        tap("timeline-memories"); tap("open-search"); XCTAssertTrue(element("page-back").waitUntilExists(timeout: 20)); sleep(1); shot("search-keyboard")
         tap("page-back")
-        tap(labelled("的成长记"), "title page"); XCTAssertTrue(element("page-back").waitUntilExists(timeout: 20)); sleep(1); shot("title-page")
+        tap("名字的故事"); XCTAssertTrue(element("page-back").waitUntilExists(timeout: 20)); sleep(1); shot("title-page")
         tap("page-back")
-        tap("open-settings"); tap("settings-profile"); XCTAssertTrue(element("page-back").waitUntilExists(timeout: 20)); sleep(1); shot("profile")
+        relaunchApp(); tap("open-settings"); tap("settings-profile"); XCTAssertTrue(element("page-back").waitUntilExists(timeout: 20)); sleep(1); shot("profile")
         tap("page-back"); tap("settings-backup"); tap("storage-open"); XCTAssertTrue(element("page-back").waitUntilExists(timeout: 20)); sleep(1); shot("storage")
         relaunchApp()
-        tap("volume-2026-09"); tap("record-fixture")
-        tap(labelled("点开看原图"), "record photo"); sleep(2); shot("media-viewer")
+        tap("timeline-memories"); tap("volume-2026-09"); tap("record-fixture")
+        tap(labelled("点开查看原图"), "record photo"); sleep(2); shot("media-viewer")
     }
     func testUnreadableLibraryRecoversFromLocalBackup() throws {
         XCTAssertTrue(element("本机资料暂时无法打开").waitUntilExists(timeout: 20)); shot("unreadable-library")
         tap("从最近的本机备份恢复"); tap("恢复备份")
-        XCTAssertTrue(element("volume-2026-09").waitUntilExists(timeout: 30))
+        XCTAssertTrue(element("timeline-memories").waitUntilExists(timeout: 30)); tap("timeline-memories")
         tap("volume-2026-09")
         XCTAssertTrue(element("record-fixture").waitUntilExists(timeout: 30)); shot("startup-backup-recovered")
-        relaunchApp()
+        relaunchApp(); tap("timeline-memories")
         tap("volume-2026-09")
         XCTAssertTrue(element("record-fixture").waitUntilExists(timeout: 20)); shot("recovered-library-relaunch")
     }

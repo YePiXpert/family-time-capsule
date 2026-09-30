@@ -84,7 +84,7 @@ export async function renderThumb(
   kind: MediaKind,
   uri: string,
   base: string,
-): Promise<{ thumb: string; width: number; height: number } | undefined> {
+): Promise<{ thumb: string; width: number; height: number; preview?: string } | undefined> {
   if (kind !== "image" && kind !== "video") return;
   try {
     ensureDirectories();
@@ -113,7 +113,14 @@ export async function renderThumb(
     } catch {
       // 系统缓存目录的清理尽力而为。
     }
-    return { thumb: thumb.name, width, height };
+    let preview: string | undefined;
+    try {
+      const small = await ImageManipulator.manipulateAsync(thumb.uri, [{ resize: { width: 160 } }],
+        { compress: 0.45, format: ImageManipulator.SaveFormat.JPEG, base64: true });
+      if (small.base64 && small.base64.length < 23977) preview = `data:image/jpeg;base64,${small.base64}`;
+      if (small.uri !== thumb.uri) { const cache = new File(small.uri); if (cache.exists) cache.delete(); }
+    } catch { /* Original and persistent thumbnail are still available. */ }
+    return { thumb: thumb.name, width, height, ...(preview ? { preview } : {}) };
   } catch {
     return undefined;
   }

@@ -1,3 +1,4 @@
+import { ensureAttachment } from "./attachments";
 /**
  * 开放归档的编排：规划版面 → 查剩余空间 → 流式写 ZIP 到缓存 → 交给系统分享面板。
  *
@@ -72,8 +73,9 @@ export async function writeArchive(
 ): Promise<File> {
   for (const e of plan.entries) {
     if (e.kind !== "media") continue;
-    const m = state.media[e.mediaId]!,
-      source = mediaFile(m);
+    const m = state.media[e.mediaId]!;
+    await ensureAttachment(m, signal);
+    const source = mediaFile(m);
     if (!source.exists || source.size !== m.bytes)
       throw new Error(`素材缺失或损坏：${m.name}`);
   }

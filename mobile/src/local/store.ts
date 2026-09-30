@@ -1,3 +1,4 @@
+import { captureHistory } from "./history";
 import {
   ENTITY_KINDS,
   diffLibrary,
@@ -72,6 +73,7 @@ export class LocalStore {
       const state = forkLibrary(this.state);
       const result = await apply(state);
       state.revision = this.state.revision + 1;
+      if (!options.versioned) captureHistory(this.state, state);
       const delta = diffLibrary(this.state, state);
       // 没动过的集合换回上一版的对象：引用不变，界面上按集合记忆的派生数据
       // （书架排序、足迹聚类）才不会因为改了一条草稿就整库重算。
@@ -85,6 +87,7 @@ export class LocalStore {
       for (const field of [
         "profile",
         "yearNotes",
+        "yearStories",
         "yearCovers",
         "yearPicks",
         "yearBooksBoundAt",

@@ -1,3 +1,4 @@
+import { setBirthdayNotifications } from "./notifications";
 import { useCallback, useEffect, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import { Alert, Pressable, StyleSheet, Switch, View } from "react-native";
@@ -456,6 +457,13 @@ export function Appearance() {
           </View>
         </Card>
       </View>
+      <Card>
+        <Text style={s.heading}>生日与拆信提醒</Text>
+        <Text style={s.muted}>只在重要日子提醒，不发每日催促。通知不包含记录正文。</Text>
+        <Button title={state.settings.birthdayNotifications ? "关闭重要日子通知" : "开启重要日子通知"} onPress={() => {
+          void setBirthdayNotifications(store, !state.settings.birthdayNotifications).catch((e) => setError(messageOf(e)));
+        }} />
+      </Card>
       <ErrorText message={error} />
     </Page>
   );

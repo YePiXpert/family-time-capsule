@@ -1,3 +1,4 @@
+import { ensureAllAttachments } from "../local/attachments";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Platform, StyleSheet, View, useWindowDimensions } from "react-native";
 import { useLibrary, useStore } from "../local/context";
@@ -271,6 +272,7 @@ export function FamilyScreen({ navigation }: Props<"Family">) {
       try {
         const result = await startSharing(store, key, {
           transport: createTransport(),
+                  eagerMedia: false,
           onProgress: setProgress,
           signal,
         });
@@ -284,7 +286,8 @@ export function FamilyScreen({ navigation }: Props<"Family">) {
     });
   const readRecovered = async (joined: JoinedFamily, signal: AbortSignal) => {
     setProgress("正在解开远端最新的一份…");
-      const newest = await readNewestManifest({ transport: createTransport(), key: joined.key, signal });
+      const newest = await readNewestManifest({ transport: createTransport(),
+                  eagerMedia: false, key: joined.key, signal });
       setStep({
         kind: "approved",
         joined,
@@ -318,6 +321,7 @@ export function FamilyScreen({ navigation }: Props<"Family">) {
               if (isLocalBusy()) throw new Error("本机正在备份或恢复，等它完成再试。");
               if (!claimSync()) throw new Error("正在同步，等它完成再试。");
               try {
+                await ensureAllAttachments(store.get(), undefined, signal);
                 await leaveFamily({
                   transport: createTransport(),
                   signal,
@@ -325,7 +329,8 @@ export function FamilyScreen({ navigation }: Props<"Family">) {
                   // 还是没让退：马上把这台的那一份发回去，家人那边不缺它。
                   republish: async () => {
                     const key = await loadKey();
-                    if (key) await runFamilySync(store, { transport: createTransport(), key, signal });
+                    if (key) await runFamilySync(store, { transport: createTransport(),
+                  eagerMedia: false, key, signal });
                   },
                 });
                 await forgetToken();
@@ -355,6 +360,7 @@ export function FamilyScreen({ navigation }: Props<"Family">) {
       if (!key) throw new Error("这台手机还没拿到家庭的钥匙，请退出家庭后重新加入。");
       const summary = await verifyRemoteBackup({
         transport: createTransport(),
+                  eagerMedia: false,
         key,
         onProgress: setProgress,
         signal,

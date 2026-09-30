@@ -158,7 +158,7 @@ export async function openLetter(store: LocalStore, id: string) {
     if (!letter) throw new Error("这封信已删除。");
     const opened = openLetterAt(letter, now());
     if (opened !== letter)
-      s.letters[id] = { ...opened, ancestors: lineage(letter) };
+      s.letters[id] = { ...opened, openedBy: s.settings.by || "家人", ancestors: lineage(letter) };
   });
 }
 /** 删信只删实体（留墓碑）；信里的录音和记录一样，留给「清理未使用素材」回收。 */

@@ -23,7 +23,7 @@ export const FAB_INSET = 20;
 const SIZE = FAB_SIZE;
 
 /**
- * 「记一刻」悬浮钮：书架与月册内页共用这一份，别再各写一遍。
+ * 「记一条」悬浮钮：书架与月册内页共用这一份，别再各写一遍。
  * iOS 液态玻璃下是赤陶 tint 的系统玻璃圆钮，其余平台是实底赤陶加柔和投影。
  * 玻璃圆钮不做淡入、忙碌时只淡图标：祖先透明度小于 1 时系统不画玻璃，
  * 书架上就只剩一支白铅笔（1.0.0 真机截图）。
@@ -64,7 +64,7 @@ export function CaptureFab() {
         <Pressable
           testID="capture-new"
           accessibilityRole="button"
-          accessibilityLabel="记一刻"
+          accessibilityLabel="记一条"
           disabled={busy}
           onPress={() => {
             if (!guard.take()) return;

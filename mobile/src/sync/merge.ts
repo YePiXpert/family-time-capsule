@@ -1,3 +1,4 @@
+import { mergeHistory, historyMedia } from "../local/history";
 import { contentHashOf, hashOf, lineage } from "../local/hash";
 import {
   PROFILE_FIELDS,
@@ -253,6 +254,7 @@ function rootIds(lib: Library): RootId[] {
     ...PROFILE_FIELDS.map((f) => `profile:${f}`),
     ...Object.keys(lib.yearNotes).map((y) => `yearNotes:${y}`),
     ...Object.keys(lib.yearCovers).map((y) => `yearCovers:${y}`),
+    ...Object.keys(lib.yearStories ?? {}).map((y) => `yearStories:${y}`),
     ...Object.keys(lib.yearPicks ?? {}).map((y) => `yearPicks:${y}`),
   ];
 }
@@ -264,7 +266,13 @@ function setRoot(lib: Library, id: RootId, value: unknown): void {
     lib.profile = profile as Library["profile"];
     return;
   }
-  const [field, year] = id.split(":") as ["yearNotes" | "yearCovers" | "yearPicks", string];
+  const [field, year] = id.split(":") as ["yearNotes" | "yearCovers" | "yearPicks" | "yearStories", string];
+  if (field === "yearStories") {
+    lib.yearStories = { ...lib.yearStories };
+    if (value === undefined) delete lib.yearStories[year];
+    else lib.yearStories[year] = value as NonNullable<Library["yearStories"]>[string];
+    return;
+  }
   if (field === "yearPicks") {
     if (value === undefined) {
       if (lib.yearPicks) {
@@ -430,7 +438,7 @@ function referencedShared(s: Library): Set<string> {
       ...r.mediaIds,
       ...(r.coverId ? [r.coverId] : []),
     ]),
-    ...Object.values(s.letters).flatMap((l) => l.mediaIds),
+    ...Object.values(s.letters).flatMap((l) => [...l.mediaIds, ...historyMedia(l)]),
   ]);
 }
 type RootVersion = { value: unknown; fp: string; at?: string };
@@ -494,6 +502,16 @@ function mergeVersionedRoot(
     fp: rootFp(localValue),
     at: stampOf(local, id),
   };
+  // A pending automatic result on another phone cannot overwrite a family's edited story.
+  if (id.startsWith("yearStories:")) {
+    const versions = [mine, ...ordered.map((r) => ({ value: rootValue(r.library, id), fp: rootFp(rootValue(r.library, id)), at: stampOf(r.library, id) }))];
+    const edited = versions.filter((v) => (v.value as { edited?: boolean } | undefined)?.edited);
+    if (edited.length) {
+      edited.sort((a, b) => newerRoot(a, b));
+      const best = edited[0]!;
+      return { version: best, seen: versions.map((v) => v.fp) };
+    }
+  }
   const stamped: RootVersion[] = [],
     plain: RootVersion[] = [];
   for (const r of ordered) {
@@ -904,6 +922,7 @@ export function mergeLibraries(
   if (Object.keys(tombstones).length) next.tombstones = tombstones;
   // 素材：按 id 取并集，本机已有的永不被覆盖；只带回合并后共享实体引用到的那些，
   // 外加留底版本引用的——本机那版赢了时，对方那版的照片只有现在能拿到，「用这一版」才不丢图。
+  mergeHistory(next, [local, ...ordered.map((r) => r.library)]);
   const wantedMedia: Stored<LocalMedia>[] = [];
   const loserMedia = conflicts.flatMap(
     (c) => (c.loser as LocalRecord | LocalLetter).mediaIds,

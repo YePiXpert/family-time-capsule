@@ -1,3 +1,6 @@
+import * as ImagePicker from "expo-image-picker";
+import { preserveMedia } from "./files";
+import { nthBirthday, toDayKey } from "./dates";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
@@ -18,7 +21,6 @@ import { useLibrary, useStore } from "./context";
 import { PermissionDenied, useRecorder } from "./editorHooks";
 import { ExitGate } from "./exitGate";
 import { isEmptyLetter } from "./empties";
-import { toDayKey } from "./dates";
 import { dropLetter, openAtLabel, PAST_OPEN_AT, writeLetter } from "./letters";
 import { contentHashOf } from "./hash";
 import {
@@ -314,17 +316,17 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
   const seal = () => {
-    if (!letter.text.trim()) {
+    if (!letter.text.trim() && !letter.mediaIds.length) {
       setError("信还是空的，先写点什么。");
       return;
     }
-    if (letter.openAt <= toDayKey(new Date())) {
+    if (letter.visibility !== "family" && letter.openAt <= toDayKey(new Date())) {
       setError(PAST_OPEN_AT);
       return;
     }
     Alert.alert(
       "封存这封信？",
-      `封存后就不能再改了，到 ${openAtLabel(letter.openAt)} 才能拆。`,
+      `封存后与家人共享。${letter.visibility === "family" ? "家人现在就能读。" : `约定到 ${openAtLabel(letter.openAt)} 拆开，双方也可以确认提前拆。`}完整可阅读归档会包含这封信的明文。`,
       [
         { text: "再想想", style: "cancel" },
         {
@@ -484,6 +486,17 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
                 </View>
               )}
             </Pressable>
+            <View style={{ gap: 8, paddingVertical: 12 }}>
+              <Text style={s.muted}>封存后的可见范围</Text>
+              <View style={s.row}>
+                <Button title="留到生日" compact selected={letter.visibility !== "family"} disabled={busy} onPress={() => change({ visibility: "birthday" })} />
+                <Button title="家人现在可读" compact selected={letter.visibility === "family"} disabled={busy} onPress={() => change({ visibility: "family" })} />
+              </View>
+              {letter.visibility !== "family" && !!state.profile.birthday && <View style={s.row}>{[1, 3, 6, 12, 18].map((age) => {
+                const day = nthBirthday(state.profile.birthday, age);
+                return day && day > toDayKey(new Date()) ? <Button key={age} title={`${age} 岁生日`} compact selected={letter.openAt === day} disabled={busy} onPress={() => change({ openAt: day })} /> : null;
+              })}</View>}
+            </View>
             {dateOpen && (
               <View style={{ gap: 8, paddingBottom: 8 }}>
                 <DateTimePicker
@@ -601,16 +614,27 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
                 />
               </View>
             )}
+            <Button title="添加照片或视频" kind="text" disabled={busy || recording} onPress={() => { void run(async () => {
+              await flush();
+              const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+              if (!permission.granted) throw new PermissionDenied("请在系统设置中允许选择照片。");
+              const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images", "videos"], allowsMultipleSelection: true, orderedSelection: true, quality: 1 });
+              if (result.canceled) return;
+              const imported: LocalMedia[] = [];
+              for (const asset of result.assets) imported.push(await preserveMedia(asset.uri, asset.fileName ?? (asset.type === "video" ? "视频.mp4" : "照片.jpg"), asset.type === "video" ? "video" : "image"));
+              const d = current.current;
+              if (d) await persist({ ...d, letter: { ...d.letter, mediaIds: [...d.letter.mediaIds, ...imported.map((m) => m.id)], updatedAt: now() } }, imported);
+            }); }} />
             {recordings.map((media, i) => (
               <View
                 key={media.id}
                 style={[s.row, { flexWrap: "nowrap", gap: 0 }]}
               >
                 <Text style={[s.muted, { flex: 1, minWidth: 0 }]}>
-                  录音 {i + 1}
+                  {media.kind === "audio" ? "录音" : media.kind === "video" ? "视频" : "照片"} {i + 1}
                 </Text>
                 <Button
-                  title="听一下"
+                  title={media.kind === "audio" ? "听一下" : "看一下"}
                   kind="text"
                   compact
                   disabled={busy || recording}
@@ -624,7 +648,7 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
                   disabled={busy || recording}
                   onPress={() =>
                     // 去掉后这段录音不在任何地方引用，清理素材时会被删掉：先问一句。
-                    Alert.alert("去掉这段录音？", "去掉后信里就没有这段录音了。", [
+                    Alert.alert("去掉这个附件？", "去掉后信里就没有这个附件了。", [
                       { text: "取消", style: "cancel" },
                       {
                         text: "去掉",

@@ -1,156 +1,36 @@
-import { useEffect, useRef, useState } from "react";
-import {
-  Alert,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  View,
-  useWindowDimensions,
-} from "react-native";
-import type { Svg } from "react-native-svg";
-import * as Location from "expo-location";
+import { useState } from "react";
+import { Alert, Pressable, View } from "react-native";
 import { useLibrary, useStore } from "./context";
-import {
-  addRecordsToAlbum,
-  beginDraft,
-  createAlbumWithRecords,
-  now,
-} from "./services";
+import { beginDraft, now } from "./services";
 import { deleteRecord, patchRecord } from "./model";
-import { looksLikeCoordinates, placeLabel } from "./places";
 import { pickAnother } from "./shuffle";
 import { useFocusGuard, type Props } from "./navigation";
 import {
-  BottomBar,
   Button,
-  Card,
   DangerCard,
-  DateStrip,
   ErrorText,
-  IconButton,
   Page,
+  Photo,
   Text,
   dateLabel,
   messageOf,
   useStyles,
-  useTheme,
 } from "./ui";
-import { Photo, PhotoDetails } from "./Media";
-import {
-  KeepSakeCard,
-  exportKeepSakeCard,
-  prepareKeepSakePhoto,
-} from "./KeepSakeCard";
+
 export function RecordScreen({ route, navigation }: Props<"Record">) {
   const state = useLibrary(),
     store = useStore(),
     s = useStyles(),
-    { colors } = useTheme();
-  const { width } = useWindowDimensions();
-  const record = state.records[route.params.id],
-    [error, setError] = useState(""),
-    [message, setMessage] = useState(""),
-    [chooseAlbum, setChooseAlbum] = useState(false),
-    [photoIndex, setPhotoIndex] = useState(0);
-  const pager = useRef<ScrollView>(null);
-  const albumGuard = useFocusGuard();
-  const cardRef = useRef<Svg | null>(null),
-    [card, setCard] = useState<{
-      photo?: { uri: string; aspect: number };
-    } | null>(null),
-    [cardBusy, setCardBusy] = useState(false),
-    [placeBusy, setPlaceBusy] = useState(false);
-  useEffect(() => {
-    if (!card || !cardBusy || !record) return;
-    let cancelled = false;
-    // 两帧之后再取图，确保离屏 Svg 完成布局与位图合成。
-    const first = requestAnimationFrame(() =>
-      requestAnimationFrame(async () => {
-        if (cancelled) return;
-        try {
-          await exportKeepSakeCard(cardRef.current, record.id);
-        } catch (e) {
-          setError(messageOf(e));
-        } finally {
-          setCardBusy(false);
-          setCard(null);
-        }
-      }),
-    );
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(first);
-    };
-  }, [card, cardBusy, record]);
+    guard = useFocusGuard();
+  const record = state.records[route.params.id];
+  const [error, setError] = useState("");
+  const [details, setDetails] = useState(false);
   if (!record)
     return (
-      <Page>
-        <Text>这段时光已删除。</Text>
+      <Page title="记录">
+        <Text>这条记录已删除。</Text>
       </Page>
     );
-  const makeKeepSake = async () => {
-    setCardBusy(true);
-    setError("");
-    try {
-      const cover =
-        (record.coverId ? state.media[record.coverId] : undefined)?.kind ===
-        "image"
-          ? state.media[record.coverId!]
-          : Object.values(state.media).find(
-              (m) => m.kind === "image" && record.mediaIds.includes(m.id),
-            );
-      setCard({ photo: await prepareKeepSakePhoto(cover) });
-    } catch (e) {
-      setError(messageOf(e));
-      setCardBusy(false);
-    }
-  };
-  const photoPlace = record.mediaIds
-    .map((id) => state.media[id]?.photoMetadata)
-    .find((m) => m?.latitude !== undefined && m.longitude !== undefined);
-  const canNamePlace =
-    !!photoPlace &&
-    (!record.location.trim() || looksLikeCoordinates(record.location));
-  const namePlace = async () => {
-    if (!photoPlace) return;
-    setPlaceBusy(true);
-    setError("");
-    try {
-      // 逆地理只需要把已知坐标换成地名；Android 的 Geocoder 前置要求定位权限。
-      if (Platform.OS === "android") {
-        const permission = await Location.requestForegroundPermissionsAsync();
-        if (!permission.granted)
-          throw new Error("请在系统设置中允许使用定位后，再查拍摄地点的地名。");
-      }
-      const [candidate] = await Location.reverseGeocodeAsync({
-        latitude: photoPlace.latitude!,
-        longitude: photoPlace.longitude!,
-      });
-      const label = placeLabel(candidate, record.location);
-      if (label === record.location)
-        throw new Error("没有查到这组坐标的地名，地点保持原样。");
-      // 查地名要一会儿：人已经离开这一页（比如进了编辑页）就不再弹，免得确认落在编辑页上、改动基线对不上。
-      if (!navigation.isFocused()) return;
-      Alert.alert("用这个地名？", label, [
-        { text: "取消", style: "cancel" },
-        {
-          text: "写入地点",
-          onPress: () => {
-            void store
-              .change((lib) =>
-                patchRecord(lib, record.id, { location: label }, now()),
-              )
-              .catch((e) => setError(messageOf(e)));
-          },
-        },
-      ]);
-    } catch (e) {
-      setError(messageOf(e));
-    } finally {
-      setPlaceBusy(false);
-    }
-  };
   const toggle = (key: "first" | "quote") => {
     void store
       .change((lib) => {
@@ -159,54 +39,12 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
       })
       .catch((e) => setError(messageOf(e)));
   };
-  const albums = Object.values(state.albums).sort(
-    (a, b) =>
-      b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id),
-  );
-  const addTo = (albumId: string) => {
-    void addRecordsToAlbum(store, albumId, [record.id])
-      .then((album) => {
-        setChooseAlbum(false);
-        setMessage(`已加入「${album.name}」。`);
-      })
-      .catch((e) => setError(messageOf(e)));
-  };
-  // 转场中连点只建一本：多建的那本空相册会留在书架上，还会同步给全家。
-  const createAlbum = () => {
-    if (!albumGuard.take()) return;
-    void createAlbumWithRecords(store, [record.id])
-      .then((id) => {
-        setChooseAlbum(false);
-        navigation.navigate("Album", { id });
-      })
-      .catch((e) => {
-        albumGuard.release();
-        setError(messageOf(e));
-      });
-  };
-  // 同一记录多张照片横向分页连翻；其他素材在正文后逐条列出。
-  const photos = record.mediaIds
-    .map((id) => state.media[id])
-    .filter((m): m is NonNullable<typeof m> => m?.kind === "image");
-  const others = record.mediaIds
-    .map((id) => state.media[id])
-    .filter((m): m is NonNullable<typeof m> => !!m && m.kind !== "image");
-  const currentIndex = Math.min(photoIndex, Math.max(photos.length - 1, 0));
-  const photoWidth = width - 40;
-  const goTo = (i: number) => {
-    const next = Math.max(0, Math.min(i, photos.length - 1));
-    setPhotoIndex(next);
-    pager.current?.scrollTo({ x: next * photoWidth, animated: true });
-  };
-  const kindLabel = (kind: string) =>
-    kind === "audio" ? "听录音" : kind === "video" ? "看视频" : "打开文件";
-  // 从「随便翻翻」进来：顶栏右侧可以一直翻，replace 不让返回栈越积越长。
-  const recordIds = Object.keys(state.records);
+  const ids = Object.keys(state.records);
   return (
     <Page
-      scroll={false}
+      title="这一刻"
       right={
-        route.params.shuffle && recordIds.length > 1 ? (
+        route.params.shuffle && ids.length > 1 ? (
           <Button
             title="再翻一页"
             kind="text"
@@ -214,7 +52,7 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
             testID="shuffle-next"
             onPress={() =>
               navigation.replace("Record", {
-                id: pickAnother(recordIds, record.id)!,
+                id: pickAnother(ids, record.id)!,
                 shuffle: true,
               })
             }
@@ -222,301 +60,124 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
         ) : undefined
       }
     >
-      <ScrollView
-        alwaysBounceVertical={false}
-        contentContainerStyle={s.content}
-      >
-        {photos.length > 0 && (
-          <View style={{ gap: 8 }}>
-            <ScrollView
-              ref={pager}
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              scrollEnabled={photos.length > 1}
-              onMomentumScrollEnd={(e) =>
-                setPhotoIndex(
-                  Math.round(e.nativeEvent.contentOffset.x / photoWidth),
-                )
-              }
-            >
-              {photos.map((media, i) => (
-                <Pressable
-                  key={media.id}
-                  accessibilityRole="imagebutton"
-                  accessibilityLabel={
-                    photos.length > 1
-                      ? `第 ${i + 1} 张照片，共 ${photos.length} 张，点开看原图`
-                      : "照片，点开看原图"
-                  }
-                  onPress={() =>
-                    navigation.navigate("Media", {
-                      id: media.id,
-                      recordId: record.id,
-                    })
-                  }
-                  style={{ width: photoWidth }}
-                >
-                  <Photo media={media} contain />
-                </Pressable>
-              ))}
-            </ScrollView>
-            {photos.length > 1 && (
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                }}
-              >
-                <IconButton
-                  label="上一张"
-                  icon="arrow-left"
-                  testID="record-photo-prev"
-                  onPress={() => goTo(currentIndex - 1)}
-                />
-                <View style={{ flexDirection: "row", gap: 6 }}>
-                  {photos.map((m, i) => (
-                    <View
-                      key={m.id}
-                      style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: 3,
-                        backgroundColor:
-                          i === currentIndex ? colors.accent : colors.line,
-                      }}
-                    />
-                  ))}
-                </View>
-                <IconButton
-                  label="下一张"
-                  icon="chevron-right"
-                  testID="record-photo-next"
-                  onPress={() => goTo(currentIndex + 1)}
-                />
-              </View>
-            )}
-            <PhotoDetails media={photos[currentIndex]!} />
-          </View>
-        )}
-        <DateStrip>
-          <Text style={[s.muted, { color: colors.accent, fontWeight: "600" }]}>
-            {dateLabel(record.date)}
-            {record.first ? " · 第一次" : ""}
-          </Text>
-        </DateStrip>
-        {(record.personIds?.length ?? 0) > 0 && (
-          <View style={s.row}>
-            {record
-              .personIds!.map((id) => state.persons[id])
-              .filter((p): p is NonNullable<typeof p> => !!p)
-              .map((person) => (
-                <View
-                  key={person.id}
-                  style={{
-                    paddingHorizontal: 12,
-                    paddingVertical: 4,
-                    borderRadius: 12,
-                    borderWidth: StyleSheet.hairlineWidth,
-                    borderColor: colors.glassLine,
-                  }}
-                >
-                  <Text style={s.muted}>{person.name}</Text>
-                </View>
-              ))}
-          </View>
-        )}
-        {/* 没起标题的记录不再拿正文首行充当标题：正文就在下面，重复一遍只会显得怪。 */}
-        {!!record.title.trim() && (
-          <Text style={s.heading}>{record.title.trim()}</Text>
-        )}
-        {!!record.text && <Text selectable>{record.text}</Text>}
-        {!!record.by && (
-          <Text
-            style={[s.muted, { alignSelf: "flex-end" }]}
-            selectable
-            testID="record-by"
+      <Text style={s.muted}>
+        {dateLabel(record.date)} · {record.by || "家人"}
+      </Text>
+      {!!record.title.trim() && <Text style={s.title}>{record.title}</Text>}
+      {!!record.text && <Text selectable>{record.text}</Text>}
+      {record.mediaIds.map((id, i) => {
+        const media = state.media[id];
+        if (!media) return null;
+        return media.kind === "image" ? (
+          <Pressable
+            key={id}
+            accessibilityRole="imagebutton"
+            accessibilityLabel={`照片 ${i + 1}，点开查看原图`}
+            onPress={() =>
+              navigation.navigate("Media", { id, recordId: record.id })
+            }
           >
-            {`—— ${record.by}`}
-          </Text>
-        )}
-        {!!record.location && (
-          <Text style={s.muted} selectable>
-            {record.location}
-          </Text>
-        )}
-        {canNamePlace && (
-          <View style={s.row}>
-            <Button
-              title={placeBusy ? "正在查询地名…" : "把地点换成地名"}
-              kind="text"
-              compact
-              icon="pin"
-              testID="place-resolve"
-              disabled={placeBusy}
-              onPress={() => {
-                void namePlace();
-              }}
-            />
-          </View>
-        )}
-        {others.length > 0 && (
-          <View style={s.row}>
-            {others.map((media) => {
-              const sameKind = others.filter((o) => o.kind === media.kind);
-              const ordinal =
-                sameKind.length > 1 ? ` ${sameKind.indexOf(media) + 1}` : "";
-              return (
-                <Button
-                  key={media.id}
-                  title={kindLabel(media.kind) + ordinal}
-                  kind="text"
-                  compact
-                  icon={
-                    media.kind === "audio"
-                      ? "audio"
-                      : media.kind === "video"
-                        ? "video"
-                        : "file"
-                  }
-                  onPress={() =>
-                    navigation.navigate("Media", {
-                      id: media.id,
-                      recordId: record.id,
-                    })
-                  }
-                />
-              );
-            })}
-          </View>
-        )}
+            <Photo media={media} preview contain />
+          </Pressable>
+        ) : (
+          <Button
+            key={id}
+            title={
+              media.kind === "audio"
+                ? `听录音 ${i + 1}`
+                : media.kind === "video"
+                  ? `看视频 ${i + 1}`
+                  : `打开附件 ${i + 1}`
+            }
+            icon={
+              media.kind === "audio"
+                ? "audio"
+                : media.kind === "video"
+                  ? "video"
+                  : "file"
+            }
+            onPress={() =>
+              navigation.navigate("Media", { id, recordId: record.id })
+            }
+          />
+        );
+      })}
+      {!!record.by && (
+        <Text style={[s.muted, { alignSelf: "flex-end" }]} testID="record-by">
+          —— {record.by}
+        </Text>
+      )}
+      {!!record.location && <Text style={s.muted}>{record.location}</Text>}
+      <View style={s.row}>
+        <Button
+          title="编辑"
+          primary
+          icon="edit"
+          testID="record-edit"
+          onPress={() => {
+            if (!guard.take()) return;
+            void beginDraft(store, record.id)
+              .then((draftId) => navigation.navigate("Editor", { draftId }))
+              .catch((e) => {
+                guard.release();
+                setError(messageOf(e));
+              });
+          }}
+        />
+        <Button
+          title="修改历史"
+          kind="text"
+          onPress={() =>
+            navigation.navigate("History", { id: record.id, kind: "records" })
+          }
+        />
+      </View>
+      <Button
+        title={details ? "收起标记" : "记录标记"}
+        kind="text"
+        onPress={() => setDetails(!details)}
+      />
+      {details && (
         <View style={s.row}>
           <Button
             title="第一次"
             compact
             selected={record.first}
-            icon="star"
             onPress={() => toggle("first")}
           />
           <Button
             title="她说的话"
             compact
             selected={!!record.quote}
-            icon="quote"
             testID="record-quote"
             onPress={() => toggle("quote")}
           />
         </View>
-        {chooseAlbum && (
-          <Card>
-            <Text style={s.heading}>加入相册</Text>
-            {albums.length > 0 ? (
-              <View style={s.row}>
-                {albums.map((a) => {
-                  const inAlbum = a.items.some((i) => i.recordId === record.id);
-                  return (
-                    <Button
-                      key={a.id}
-                      title={a.name}
-                      compact
-                      selected={inAlbum}
-                      disabled={inAlbum}
-                      onPress={() => addTo(a.id)}
-                    />
-                  );
-                })}
-              </View>
-            ) : (
-              <Text style={s.muted}>还没有相册，用这一刻建一本吧。</Text>
-            )}
-            <View style={s.row}>
-              <Button
-                title="新建相册"
-                kind="text"
-                compact
-                icon="plus"
-                onPress={createAlbum}
-              />
-            </View>
-          </Card>
-        )}
-        {!!message && (
-          <Text style={s.muted} accessibilityLiveRegion="polite">
-            {message}
-          </Text>
-        )}
-        <ErrorText message={error} />
-        {card && (
-          <View
-            pointerEvents="none"
-            style={{ position: "absolute", left: -10000, top: 0, opacity: 0 }}
-          >
-            <KeepSakeCard
-              ref={cardRef}
-              record={record}
-              profileName={state.profile.name}
-              photo={card.photo}
-            />
-          </View>
-        )}
-        <DangerCard
-          title="删除记录"
-          testID="record-delete"
-          onPress={() =>
-            Alert.alert(
-              "删除这段时光？",
-              "它也会从所有相册里移出，删了就找不回来。",
-              [
-                { text: "取消", style: "cancel" },
-                {
-                  text: "删除记录",
-                  style: "destructive",
-                  onPress: () => {
-                    void store
-                      .change((lib) => deleteRecord(lib, record.id))
-                      .then(() => navigation.goBack())
-                      .catch((e) => setError(messageOf(e)));
-                  },
+      )}
+      <ErrorText message={error} />
+      <DangerCard
+        title="删除记录"
+        testID="record-delete"
+        onPress={() =>
+          Alert.alert(
+            "删除这条记录？",
+            "同步后家人的时间线也会移除它。请先备份需要保留的内容。",
+            [
+              { text: "取消", style: "cancel" },
+              {
+                text: "删除记录",
+                style: "destructive",
+                onPress: () => {
+                  void store
+                    .change((lib) => deleteRecord(lib, record.id))
+                    .then(() => navigation.goBack())
+                    .catch((e) => setError(messageOf(e)));
                 },
-              ],
-            )
-          }
-        />
-      </ScrollView>
-      <BottomBar>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <View style={{ flex: 1 }}>
-            <Button
-              title="编辑"
-              primary
-              icon="edit"
-              testID="record-edit"
-              disabled={placeBusy}
-              onPress={() => {
-                void beginDraft(store, record.id)
-                  .then((draftId) => navigation.navigate("Editor", { draftId }))
-                  .catch((e) => setError(messageOf(e)));
-              }}
-            />
-          </View>
-          <Button
-            title="加入相册"
-            compact
-            onPress={() => setChooseAlbum(!chooseAlbum)}
-          />
-          <Button
-            title={cardBusy ? "正在生成…" : "纪念卡"}
-            compact
-            testID="keepsake-make"
-            disabled={cardBusy}
-            onPress={() => {
-              void makeKeepSake();
-            }}
-          />
-        </View>
-      </BottomBar>
+              },
+            ],
+          )
+        }
+      />
     </Page>
   );
 }

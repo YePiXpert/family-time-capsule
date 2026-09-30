@@ -28,6 +28,8 @@ export function contentHashOf(entity: object): string {
     revision: _r,
     updatedAt: _u,
     ancestors: _a,
+    history: _h,
+    modifiedBy: _m,
     ...rest
   } = entity as Record<string, unknown>;
   const hash = hashOf(rest);
