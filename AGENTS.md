@@ -6,6 +6,7 @@
 - Before starting, run `git checkout main`, `git pull --ff-only origin main`, and inspect `git status --short`.
 - Commit small, clear milestones and push them to `origin main` by default.
 - Do not create pull requests and never force-push.
+- Use the owner identity `Yep <60808867+YePiXpert@users.noreply.github.com>` for Git author and committer. Do not add AI/assistant co-author trailers or authorship signatures to commits or repository documents.
 - Before pushing, run the local quality gate (`npm test` and `npm run typecheck` in `mobile/` and `server/`; `npm run lint` in `mobile/` — the server has no lint script) so pushes are green by default; do not wait on or poll GitHub Actions after routine pushes. Check the latest `main` CI run only when starting new work or preparing a release — if it is red, repair it directly on `main` and push.
 - For release or verification builds being tracked, including tag builds and `mobile-build.yml`, choose the waiting policy by the main model. Report the run URL, full source SHA, and known status when tracking starts:
   - **All models except Fable (including unknown models):** poll the tracked run through completion by default, then verify the result and finish delivery. Keep status checks spaced out (30–60 seconds) and provide concise progress updates while waiting.
