@@ -19,7 +19,7 @@ export const LEGACY_LIBRARY_FILE = "xiaomei-local-v1.sqlite";
 export const LEGACY_RECOVERED_PREFIX = "xiaomei-recovered-";
 export const LEGACY_BACKUP_PREFIX = "xiaomei";
 /** 服务地址：AI 与远端备份都只认这一处；宪法脚本断言这个字面量只出现在本文件。 */
-export const SERVICE_URL = "https://capsule.yep.li/api/v1";
+export const SERVICE_URL = "https://cpa.yep.li/family/api/v1";
 /** 设备令牌在 SecureStore 里的键名。 */
 export const AI_SESSION_KEY = "anan-ai-device-v1";
 export const LEGACY_AI_SESSION_KEY = "xiaomei-ai-device-v1";
