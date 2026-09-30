@@ -6,11 +6,11 @@ Android / iOS，本机优先。只供自家使用，一本家庭册，不开放�
 
 ## 安装
 
-当前安装包：[1.1.6 · 构建号 88](https://github.com/YePiXpert/family-time-capsule/releases/tag/v1.1.6)。
+当前安装包：[1.2.0 · 构建号 89](https://github.com/YePiXpert/family-time-capsule/releases/tag/v1.2.0)。
 
-- [Android APK](https://github.com/YePiXpert/family-time-capsule/releases/download/v1.1.6/FamilyTimeCapsule-android.apk)
-- [iOS IPA（未签名，需自行签名）](https://github.com/YePiXpert/family-time-capsule/releases/download/v1.1.6/FamilyTimeCapsule-ios-unsigned.ipa)
-- [SHA-256 校验和](https://github.com/YePiXpert/family-time-capsule/releases/download/v1.1.6/sha256sums.txt)
+- [Android APK](https://github.com/YePiXpert/family-time-capsule/releases/download/v1.2.0/FamilyTimeCapsule-android.apk)
+- [iOS IPA（未签名，需自行签名）](https://github.com/YePiXpert/family-time-capsule/releases/download/v1.2.0/FamilyTimeCapsule-ios-unsigned.ipa)
+- [SHA-256 校验和](https://github.com/YePiXpert/family-time-capsule/releases/download/v1.2.0/sha256sums.txt)
 
 安装包、GitHub 源码和服务器分别交付；当前对应关系与验证结果见 [HANDOFF](HANDOFF.md)。
 
