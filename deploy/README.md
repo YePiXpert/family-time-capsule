@@ -13,7 +13,7 @@
 | `APP_PORT` | 宿主端口；staging 使用验证脚本规定的隔离端口 |
 | `APP_BIND` | 除 127.0.0.1 之外的第二个监听地址（反代所在的私有网段）；必填，真实值只写私有 env |
 | `TRUST_PROXY` | 可选；可信反代的来源地址或网段（逗号分隔），默认留空＝不认 `X-Forwarded-For`。真实值只写私有 env，见下文 |
-| `AI_MODEL` | 固定 `gpt-6-astra`，五种文字任务均为 medium |
+| `AI_MODEL` | 固定 `gpt-6-astra`，六种文字任务均为 medium |
 | `TRANSCRIBE_MODEL` | `mimo-v2.5-asr` |
 | `UPSTREAM_BASE_URL` | 两种模型共用的 HTTPS 兼容上游 |
 | `UPSTREAM_KEY_PATH` | 宿主密钥文件，Compose 只读挂载 |
