@@ -8,7 +8,7 @@ export const inputSchema=z.object({
  // 1.0.3 手机仍发送 photos: []；保留字段，严格解析只接受空数组。
  photos:z.array(z.unknown()).max(0).default([]),
  context:z.string().max(60000).default(''),
- writingMode:z.enum(['polish','recap','ask','question','editor']),
+ writingMode:z.enum(['polish','recap','ask','question','editor','story']),
 }).strict();
 export type AIInput=z.infer<typeof inputSchema>;
 export type WritingMode=AIInput['writingMode'];
@@ -64,6 +64,14 @@ function parseEditorResult(value:unknown,input:AIInput) {
  } catch {throw editorError();}
 }
 export function parseResult(value:unknown,input:AIInput) {
+ if(input.writingMode==='story') {
+  try {
+   const context=parseEditorContext(input.context), ids=new Set(context.records.map(r=>r.id));
+   const result=z.object({title:z.string().trim().min(1).max(40),paragraphs:z.array(z.object({text:z.string().trim().min(1).max(1000),records:z.array(z.string()).min(1).max(8)}).strict()).min(1).max(12)}).strict().parse(value);
+   if(result.paragraphs.reduce((n,p)=>n+p.text.length,0)>4000||hasBannedWord(result.title)||result.paragraphs.some(p=>hasBannedWord(p.text)||p.records.some(id=>!ids.has(id))))throw new Error('invalid story');
+   return result;
+  } catch {throw new Problem(502,'INVALID_RESULT','年度故事内容或引用不完整，请重试。');}
+ }
  if(input.writingMode==='editor')return parseEditorResult(value,input);
  try {
   if(input.writingMode==='ask')return z.object({questions:z.array(questionSchema).min(1).max(3),first:z.boolean()}).strict().parse(value);

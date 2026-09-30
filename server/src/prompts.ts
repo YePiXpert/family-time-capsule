@@ -52,8 +52,16 @@ export const EDITOR_PROMPT = `${SHARED}
 - notes 里用一两句说明取舍，不评价文字好坏。
 JSON 格式：{"title":"书名","chapters":[{"month":"2026-09","picks":["记录id"],"quote":{"recordId":"记录id","text":"原句"}}],"notes":"一两句"}。`;
 
+export const STORY_PROMPT = `${SHARED}
+任务：根据家人这一年的记录文字，整理一篇照片穿插的年度小故事。照片由手机插入，你看不到照片，不描述照片内容。
+- 只依据记录文字里的事实，按时间叙述；保留不同落款人的视角，不把一个人的经历写成另一个人的经历。
+- 全文 200～1200 个汉字，信息少可以更短，不为凑字数编造。写成 1～12 段，每段不超过 300 字。
+- 每段 records 必须给出支撑这段事实的记录编号，1～8 个；只能引用本次清单里的编号，不引用没有文字依据的经历。
+- 书名不超过 20 字。不用底座里的禁词，不总结人生道理。原始记录不会被你修改。
+JSON 格式：{"title":"这一年的故事","paragraphs":[{"text":"一段故事","records":["1"]}]}。`;
+
 export const BANNED_WORDS:readonly string[]=['温馨','时光','岁月','静好','成长的足迹','珍贵','满满的爱','点滴','绽放','闪闪发光','治愈','见证','美好','感恩','天使','小公主','快乐成长','健康成长','茁壮'];
-export const PROMPTS:Record<WritingMode,string>={polish:POLISH_PROMPT,recap:RECAP_PROMPT,ask:ASK_PROMPT,question:QUESTION_PROMPT,editor:EDITOR_PROMPT};
+export const PROMPTS:Record<WritingMode,string>={polish:POLISH_PROMPT,recap:RECAP_PROMPT,ask:ASK_PROMPT,question:QUESTION_PROMPT,editor:EDITOR_PROMPT,story:STORY_PROMPT};
 export function promptIsWellFormed(prompt:string) {
  return prompt.startsWith(SHARED)&&prompt.includes('JSON 格式：')&&!/成长相册|用户/.test(prompt);
 }

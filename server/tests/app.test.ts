@@ -99,7 +99,7 @@ test('fixed Astra configuration preserves quotas and rejects other models',async
  const f=fixture(async(input)=>{actualModel=input.model;return {tokens:1,result:{title:'记录',text:'照片中的画面。'}};});
  f.store.db.prepare('UPDATE settings SET value=? WHERE id=1').run(JSON.stringify({paused:false,defaultModel:'gpt-6-astra',enabledModels:['gpt-6-astra'],globalPhotos:123,globalWrites:17}));
  const config=(await f.app.inject({url:'/api/v1/ai/config',headers:f.headers()})).json();
- assert.deepEqual(config.reasoningPolicy,{question:'medium',ask:'medium',polish:'medium',recap:'medium',editor:'medium'});
+ assert.deepEqual(config.reasoningPolicy,{question:'medium',ask:'medium',polish:'medium',recap:'medium',editor:'medium',story:'medium'});
  assert.equal(config.defaultModel,'gpt-6-astra');assert.equal(config.reasoningEffort,'medium');
  assert.deepEqual(config.models,[{id:'gpt-6-astra',label:'GPT-6 Astra'}]);
  assert.equal(config.globalPhotos,123);assert.equal(config.globalWrites,17);

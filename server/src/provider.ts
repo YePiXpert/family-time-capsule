@@ -11,7 +11,7 @@ export function textProvider(config:AIConfig):Provider {
  return async (input) => {
   const mode=input.writingMode;
   const instructions=PROMPTS[mode];
-  const task=mode==='ask'?'像访谈者追问一到三个问题，不写正文':mode==='question'?'给今天一个小问题':mode==='editor'?'提一个目录建议，不改原文':mode==='polish'?'润色家人原文，保留原意与事实':'根据这一年的记录标题与第一次清单写年度寄语草稿';
+  const task=mode==='story'?'根据这一年的文字记录整理年度小故事':mode==='ask'?'像访谈者追问一到三个问题，不写正文':mode==='question'?'给今天一个小问题':mode==='editor'?'提一个目录建议，不改原文':mode==='polish'?'润色家人原文，保留原意与事实':'根据这一年的记录标题与第一次清单写年度寄语草稿';
   const content:unknown[]=[{type:'text',text:JSON.stringify({task,userContext:input.context})}];
   let response:Response,raw:string;
   try {

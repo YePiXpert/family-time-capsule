@@ -14,13 +14,13 @@ export function aiRoutes({app,store,auth}:Ctx,provider:Provider,transcribe:{tran
   const member=auth(req.headers.authorization);
   // 在 schema 的硬上限之前给超长 editor 清单返回该模式的提示。
   const raw=req.body as {writingMode?:unknown;context?:unknown;photos?:unknown}|null;
-  if(typeof raw?.context==='string'&&raw.context.length>(raw.writingMode==='editor'?60000:4000))throw new Problem(400,'INVALID_INPUT',raw.writingMode==='editor'?'这一年的记录太多，请分月送。':'内容太长');
+  if(typeof raw?.context==='string'&&raw.context.length>(['editor','story'].includes(String(raw.writingMode))?60000:4000))throw new Problem(400,'INVALID_INPUT',['editor','story'].includes(String(raw.writingMode))?'这一年的记录太多，请分月送。':'内容太长');
   if(Array.isArray(raw?.photos)&&raw.photos.length)throw new Problem(400,'INVALID_INPUT','AI 不再接收照片，请只发送文字。');
   const input=inputSchema.parse(req.body);
   if(input.writingMode==='ask'&&!input.context.trim())throw new Problem(400,'INVALID_INPUT','请先写几句再让 AI 追问。');
   if(input.writingMode==='question'&&!input.context.trim())throw new Problem(400,'INVALID_INPUT','请提供最近的记录标题。');
   if(input.writingMode==='editor'&&!input.context.trim())throw new Problem(400,'INVALID_INPUT','请先送这一年的记录清单。');
-  if(input.writingMode==='editor')parseEditorContext(input.context);
+  if(input.writingMode==='editor'||input.writingMode==='story')parseEditorContext(input.context);
   const polish=input.writingMode==='polish';
   const recap=input.writingMode==='recap';
   if(polish&&!input.context.trim())throw new Problem(400,'INVALID_INPUT','请先写下正文再润色。');
