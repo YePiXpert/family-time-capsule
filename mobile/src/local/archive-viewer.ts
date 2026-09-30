@@ -145,7 +145,7 @@ input.search{width:100%;padding:10px 12px;border:1px solid var(--line);border-ra
     var today = todayKey();
     if (!lib.letters.length) return '<div class="empty">这份归档里没有信。</div>';
     return lib.letters.map(function (l) {
-      var open = !!l.openedAt || l.openAt <= today;
+      var open = l.visibility === "family" || !!l.openedAt || l.openAt <= today;
       var title = esc(l.title || "一封信");
       if (!open) return '<article class="card envelope"><div class="stamp">' + esc(Array.from((l.from || "").trim())[0] || "信") + "</div><h3>" + title +
         '</h3><div class="muted">还没到日子 · 封存至 ' + esc(dayLabel(l.openAt)) + (l.from ? " · " + esc(l.from) : "") + '</div><div class="muted">写于 ' + esc(dayLabel(localDay(l.writtenAt))) + "</div></article>";

@@ -107,6 +107,7 @@ export function useAnnualStories(
       for (const year of missingStoryYears(store.get())) {
         if (
           controller.signal.aborted ||
+          Number(year) >= new Date(sync.lastSyncAt!).getFullYear() ||
           store.get().settings.storyAttempts?.[year] === today
         )
           continue;

@@ -62,6 +62,7 @@ export type ArchiveLetter = {
   openAt: string;
   writtenAt: string;
   openedAt?: string;
+  visibility?: "family" | "birthday";
   sealed: boolean;
   text: string;
   folder: string;
@@ -331,7 +332,7 @@ export function planArchive(
 
   // 拆过的信总在；封存未拆的只在明确要求时带上；草稿从不归档。
   const letterKeep = (l: Stored<LocalLetter>) =>
-    !!l.openedAt || (!!options.includeSealedLetters && l.sealed);
+    !!l.openedAt || (l.sealed && l.visibility === "family") || (!!options.includeSealedLetters && l.sealed);
   const letters: ArchiveLetter[] = Object.values(state.letters)
     .filter((l) => letterKeep(l) && (!year || yearOf(l.writtenAt) === year))
     .sort((a, b) => a.writtenAt.localeCompare(b.writtenAt) || a.id.localeCompare(b.id))
@@ -347,6 +348,7 @@ export function planArchive(
         openAt: l.openAt,
         writtenAt: l.writtenAt,
         ...(l.openedAt ? { openedAt: l.openedAt } : {}),
+        ...(l.visibility ? { visibility: l.visibility } : {}),
         sealed: l.sealed,
         text: l.text,
         folder,
@@ -362,7 +364,7 @@ export function planArchive(
           ["落款", l.from],
           ["拆封日", l.openAt],
           ["拆封于", l.openedAt ? toDayKey(new Date(l.openedAt)) : undefined],
-          ["状态", l.openedAt ? "已拆封" : "还没拆封"],
+          ["状态", l.visibility === "family" ? "家人现在可读" : l.openedAt ? "已拆封" : "还没拆封"],
         ]),
         `# ${l.title || "一封信"}`,
         "",

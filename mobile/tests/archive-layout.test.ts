@@ -241,6 +241,14 @@ describe("planArchive", () => {
     expect(withSealed.library.letters.map((l) => l.id)).toEqual(["opened", "sealed"]);
     expect(paths(withSealed.entries).some((p) => p.includes("草稿"))).toBe(false);
   });
+  it("always includes published family-readable letters, even when sealed letters are excluded", () => {
+    const s = library();
+    s.letters.sealed = { ...s.letters.sealed!, visibility: "family" };
+    s.letters.draft = { ...s.letters.draft!, visibility: "family" };
+    const result = planArchive(s, { now: NOW, includeSealedLetters: false });
+    expect(result.library.letters.map((l) => l.id)).toEqual(["opened", "sealed"]);
+    expect(textOf(result.entries, "还没拆/信.md")).toContain("状态: 家人现在可读");
+  });
   it("filters by year across records, albums, notes and letters", () => {
     const plan = planArchive(library(), { now: NOW, year: "2025" });
     const all = paths(plan.entries);
