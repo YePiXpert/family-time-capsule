@@ -35,7 +35,7 @@ LOCAL_MAY_IMPORT_SYNC = ('src/local/App.tsx', 'src/local/Settings.tsx', 'src/loc
 SYNC_IMPORT = re.compile(IMPORT_OF + r'''["']\.\./(sync|family)/''')
 SECURE_STORE_IMPORT = re.compile(IMPORT_OF + r'''["']expo-secure-store["']''')
 FORBIDDEN_DEPENDENCIES = {'next', 'better-auth', 'drizzle-orm', 'expo-network'}
-SERVICE_URL = 'https://cpa.yep.li/family/api/v1'
+SERVICE_URL = 'https://anan.yep.li/api/v1'
 SERVICE_URL_FILE = 'src/local/brand.ts'
 
 
